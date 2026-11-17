@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}TikTok-Warteschlange{% endblock %}
+{% block content %}
+<div class="page-head"><h1>TikTok-Warteschlange</h1></div>
+
+{% if not settings.tiktok_configured %}
+<p class="notice">TikTok ist noch nicht konfiguriert. Bis dahin können fertige Videos manuell exportiert werden (Phase 6).</p>
+{% elif not accounts %}
+<p class="notice">Es ist noch kein TikTok-Konto verbunden.</p>
+{% endif %}
+
+{% if jobs %}
+<section class="tiles">
+  {% for j in jobs %}
+  <article class="tile">
+    {% if j.rendered_video and not j.rendered_video.deleted_at %}
+    <video class="vertical-video" controls preload="none" playsinline src="/media/videos/{{ j.rendered_video.id }}.mp4"
+      {% if j.rendered_video.thumbnail_path %}poster="/media/thumbnails/{{ j.rendered_video.id }}.jpg"{% endif %}></video>
+    {% else %}<div class="tile-media"><span class="tile-placeholder">kein Video</span></div>{% endif %}
+    <div class="tile-body">
+      <div class="tile-top">{{ m.publish_status(j.status) }} {{ m.badge(PUBLISH_METHOD_LABELS.get(j.method, j.method), "neutral") }}</div>
+      <a href="/highlights/{{ j.highlight_id }}"><strong>{{ j.highlight.title or ("Highlight #" ~ j.highlight_id) }}</strong></a>
+      <p class="muted small">{{ j.highlight.streamer.name }} · {{ j.created_at | timeago }}{% if j.tiktok_account %} · @{{ j.tiktok_account.username or j.tiktok_account.display_name }}{% endif %}</p>
+      {% if j.caption %}<p class="small preline">{{ j.caption }}</p>{% endif %}
+      {% if j.fail_reason %}<p class="small text-bad wrap">{{ j.fail_reason }}</p>{% endif %}
+      {% if current_user.can_edit and j.status in cancellable %}
+      <form method="post" action="/queue/{{ j.id }}/cancel" data-confirm="Eintrag abbrechen?">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Abbrechen</button></form>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="card">{{ m.empty("Die Warteschlange ist leer.", "Fertig geschnittene Highlights mit Veröffentlichungserlaubnis erscheinen hier zur Freigabe.") }}</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}System{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>System</h1>
+  {% if current_user.is_admin %}
+  <form method="post" action="/system/cleanup">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Speicherbereinigung starten</button></form>
+  {% endif %}
+</div>
+
+{% if status.warnings %}
+<section class="card card-warn">
+  <h2>Hinweise</h2>
+  <ul class="bullets">{% for w in status.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="stats">
+  <div class="stat {% if not status.database_ok %}stat-bad{% endif %}"><span class="stat-label">PostgreSQL</span><strong class="stat-value">{{ "OK" if status.database_ok else "Fehler" }}</strong><span class="stat-sub">{{ status.database_error or "verbunden" }}</span></div>
+  <div class="stat {% if not status.redis_ok %}stat-bad{% endif %}"><span class="stat-label">Redis</span><strong class="stat-value">{{ "OK" if status.redis_ok else "Fehler" }}</strong><span class="stat-sub">{{ status.redis_error or "verbunden" }}</span></div>
+  <div class="stat {% if not status.workers %}stat-bad{% endif %}"><span class="stat-label">Worker</span><strong class="stat-value">{{ status.workers | length }}</strong><span class="stat-sub">aktive RQ-Worker</span></div>
+  <div class="stat {% if status.scheduler_age_seconds is none or status.scheduler_age_seconds > 120 %}stat-bad{% endif %}"><span class="stat-label">Scheduler</span><strong class="stat-value">{{ (status.scheduler_age_seconds ~ " s") if status.scheduler_age_seconds is not none else "–" }}</strong><span class="stat-sub">seit letztem Herzschlag</span></div>
+  {% if status.disk %}
+  <div class="stat {% if status.disk.free_gb < 5 %}stat-bad{% endif %}"><span class="stat-label">Datenträger</span><strong class="stat-value">{{ status.disk.free_gb }} GB</strong><span class="stat-sub">frei von {{ status.disk.total_gb }} GB ({{ status.disk.percent_used }} % belegt)</span></div>
+  <div class="stat"><span class="stat-label">Mediendaten</span><strong class="stat-value">{{ status.data_size_gb }} GB</strong><span class="stat-sub">Limit {{ settings.storage_max_gb }} GB · {{ settings.storage_retention_days }} Tage</span></div>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Warteschlangen</h2>
+    {% if status.queues %}
+    <table class="table">
+      <thead><tr><th>Queue</th><th>Wartend</th><th>Laufend</th><th>Fehlgeschlagen</th></tr></thead>
+      <tbody>
+      {% for q in status.queues %}
+        <tr><td data-label="Queue">{{ q.name }}</td><td data-label="Wartend">{{ q.queued }}</td><td data-label="Laufend">{{ q.started }}</td><td data-label="Fehlgeschlagen" class="{% if q.failed %}text-bad{% endif %}">{{ q.failed }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}{{ m.empty("Keine Daten (Redis nicht erreichbar?).") }}{% endif %}
+    <h3>Worker</h3>
+    {% if status.workers %}
+    <ul class="list">
+      {% for w in status.workers %}
+      <li class="list-row"><span class="list-main"><strong>{{ w.queues }}</strong><span class="muted small">{{ w.name }}</span></span>
+        <span class="list-side">{{ m.badge(w.state, "ok" if w.state in ["idle", "busy"] else "warn") }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ m.empty("Kein Worker aktiv.") }}{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Konfiguration</h2>
+    <p class="muted small">Änderungen erfolgen in der <code>.env</code>-Datei, danach <code>docker compose up -d</code>. Geheimnisse werden nie angezeigt.</p>
+    <dl class="kv kv-compact">
+      {% for key, value in config.items() %}<dt><code>{{ key }}</code></dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+    <p class="muted small">Version {{ status.version }}</p>
+  </section>
+</div>
+{% endblock %}

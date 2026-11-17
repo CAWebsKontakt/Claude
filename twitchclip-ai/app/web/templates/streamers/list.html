@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Streamer{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Streamer</h1>
+</div>
+
+{% if current_user.can_edit %}
+<section class="card" id="add">
+  <h2>Streamer hinzufügen</h2>
+  <p class="muted small">
+    Neue Kanäle starten immer in <strong>Modus A</strong> (nur öffentliche Metadaten, keine Downloads).
+    Modus B lässt sich erst aktivieren, wenn eine Erlaubnis dokumentiert ist.
+  </p>
+  <form method="post" action="/streamers" class="form form-inline">
+    {{ m.csrf() }}
+    <label class="field grow">
+      <span>Twitch-Name oder Kanal-URL</span>
+      <input type="text" name="login" placeholder="z. B. kanalname oder https://twitch.tv/kanalname" required autocapitalize="none" spellcheck="false">
+    </label>
+    <label class="field grow">
+      <span>Notiz (optional)</span>
+      <input type="text" name="notes" maxlength="500">
+    </label>
+    <button type="submit" class="btn btn-primary">Hinzufügen</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="card">
+  {% if rows %}
+  <table class="table">
+    <thead><tr><th>Kanal</th><th>Status</th><th>Betriebsart</th><th>Rechte</th><th>Highlights</th><th></th></tr></thead>
+    <tbody>
+    {% for s, rights, count in rows %}
+      <tr class="{% if not s.is_active %}is-muted{% endif %}">
+        <td data-label="Kanal">
+          <a href="/streamers/{{ s.id }}"><strong>{{ s.name }}</strong></a>
+          <div class="muted small">{{ s.twitch_login }}{% if not s.twitch_user_id %} · ID ausstehend{% endif %}</div>
+        </td>
+        <td data-label="Status">
+          {{ m.live_badge(s) }}
+          {% if not s.is_active %}{{ m.badge("pausiert", "neutral") }}{% endif %}
+          {% if s.is_live and s.live_game_name %}<div class="muted small">{{ s.live_game_name }}</div>{% endif %}
+        </td>
+        <td data-label="Betriebsart">{{ m.mode_badge(s.mode) }}</td>
+        <td data-label="Rechte">{{ m.badge(rights.label, rights.tone) }}</td>
+        <td data-label="Highlights">{{ count }}</td>
+        <td class="actions"><a class="btn btn-ghost btn-sm" href="/streamers/{{ s.id }}">Details</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Noch keine Streamer angelegt.", "Fügen Sie oben einen Kanal hinzu oder setzen Sie STREAMER_LIST in der .env.") }}
+  {% endif %}
+</section>
+{% endblock %}

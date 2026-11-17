@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}{{ streamer.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="head-ident">
+    {% if streamer.profile_image_url %}<img class="avatar" src="{{ streamer.profile_image_url }}" alt="" width="56" height="56">{% endif %}
+    <div>
+      <h1>{{ streamer.name }}</h1>
+      <p class="muted small">
+        <a href="{{ streamer.channel_url }}" target="_blank" rel="noopener noreferrer">twitch.tv/{{ streamer.twitch_login }}</a>
+        · Twitch-ID: {{ streamer.twitch_user_id or "noch nicht abgefragt" }}
+      </p>
+    </div>
+  </div>
+  <div class="head-badges">
+    {{ m.live_badge(streamer) }} {{ m.mode_badge(streamer.mode) }}
+    {% if not streamer.is_active %}{{ m.badge("Überwachung pausiert", "neutral") }}{% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Rechte- und Autorisierungsstatus</h2>
+    <p>{{ m.badge(rights.label, rights.tone) }}</p>
+    {% if rights.reasons %}
+    <ul class="bullets">{% for r in rights.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+    {% endif %}
+    <dl class="kv">
+      <dt>Verarbeitung (Download, KI, Schnitt)</dt><dd>{{ "erlaubt" if rights.can_process else "nicht erlaubt" }}</dd>
+      <dt>Veröffentlichung auf TikTok</dt><dd>{{ "erlaubt" if rights.can_publish else "nicht erlaubt" }}</dd>
+      <dt>Gültige Erlaubnis</dt>
+      <dd>{% if rights.permission %}#{{ rights.permission.id }} von {{ rights.permission.granted_by_name }}{% if rights.permission.valid_until %}, bis {{ rights.permission.valid_until | localdate }}{% endif %}{% else %}keine{% endif %}</dd>
+      <dt>Twitch-OAuth (Clips)</dt>
+      <dd>
+        {% set token = rights.token %}
+        {% if token %}verbunden als {{ token.external_login or token.external_user_id }} · Scopes: {{ token.scopes | join(", ") }}
+        {% else %}nicht verbunden{% endif %}
+      </dd>
+    </dl>
+    <p class="muted small">Die OAuth-Verbindung für Streamer/Editoren wird in Phase 3 (Berechtigungen &amp; Clip-Verarbeitung) aktiviert.</p>
+  </section>
+
+  <section class="card">
+    <h2>Betrieb</h2>
+    <dl class="kv">
+      <dt>Live-Status</dt>
+      <dd>
+        {% if streamer.is_live %}live seit {{ streamer.live_started_at | localtime }} · {{ streamer.live_viewer_count or 0 }} Zuschauer
+        {% else %}offline{% endif %}
+      </dd>
+      {% if streamer.is_live %}
+      <dt>Titel / Spiel</dt><dd class="wrap">{{ streamer.live_title or "–" }} · {{ streamer.live_game_name or "–" }}</dd>
+      {% endif %}
+      <dt>Zuletzt geprüft</dt><dd>{{ streamer.live_checked_at | timeago }}</dd>
+      <dt>Hinzugefügt</dt><dd>{{ streamer.created_at | localtime }}</dd>
+      {% if streamer.last_error %}<dt>Letzter Fehler</dt><dd class="text-bad wrap">{{ streamer.last_error }}</dd>{% endif %}
+    </dl>
+    {% if current_user.can_edit %}
+    <div class="button-row">
+      <form method="post" action="/streamers/{{ streamer.id }}/active">
+        {{ m.csrf() }}
+        <input type="hidden" name="active" value="{{ '0' if streamer.is_active else '1' }}">
+        <button class="btn btn-ghost" type="submit">{{ "Überwachung pausieren" if streamer.is_active else "Überwachung fortsetzen" }}</button>
+      </form>
+      <form method="post" action="/streamers/{{ streamer.id }}/mode" class="form-inline">
+        {{ m.csrf() }}
+        <select name="mode" aria-label="Betriebsart">
+          <option value="public" {% if streamer.mode == "public" %}selected{% endif %}>Modus A – Öffentlich</option>
+          <option value="authorized" {% if streamer.mode == "authorized" %}selected{% endif %}>Modus B – Autorisiert</option>
+        </select>
+        <button class="btn btn-ghost" type="submit">Betriebsart setzen</button>
+      </form>
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Dokumentierte Erlaubnisse</h2>
+  {% if streamer.permissions %}
+  <table class="table">
+    <thead><tr><th>#</th><th>Erteilt von</th><th>Umfang</th><th>Gültigkeit</th><th>Nachweis</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for p in streamer.permissions %}
+      <tr class="{% if p.revoked_at %}is-muted{% endif %}">
+        <td data-label="#">{{ p.id }}</td>
+        <td data-label="Erteilt von">{{ p.granted_by_name }}<div class="muted small">{{ GRANTOR_LABELS.get(p.granted_by_role, p.granted_by_role) }}{% if p.contact %} · {{ p.contact }}{% endif %}</div></td>
+        <td data-label="Umfang">{{ "Verarbeitung + Veröffentlichung" if p.allows_publishing else "Nur Verarbeitung" }}{% if p.scope_note %}<div class="muted small preline">{{ p.scope_note }}</div>{% endif %}</td>
+        <td data-label="Gültigkeit">{{ p.valid_from | localdate }} – {{ p.valid_until | localdate if p.valid_until else "unbefristet" }}</td>
+        <td data-label="Nachweis" class="wrap"><span class="preline">{{ p.evidence_reference }}</span><div class="muted small">erfasst von {{ p.recorded_by.username if p.recorded_by else "–" }} am {{ p.created_at | localdate }}</div></td>
+        <td data-label="Status">
+          {% if p.revoked_at %}{{ m.badge("widerrufen", "bad") }}<div class="muted small wrap">{{ p.revoked_reason }}</div>
+          {% elif p in [rights.permission] %}{{ m.badge("aktiv", "good") }}
+          {% else %}{{ m.badge("nicht aktiv", "neutral") }}{% endif %}
+        </td>
+        <td class="actions">
+          {% if current_user.can_edit and not p.revoked_at %}
+          <form method="post" action="/streamers/{{ streamer.id }}/permissions/{{ p.id }}/revoke" data-confirm="Erlaubnis #{{ p.id }} wirklich widerrufen?">
+            {{ m.csrf() }}
+            <input type="text" name="reason" placeholder="Grund" aria-label="Grund des Widerrufs" class="input-sm">
+            <button class="btn btn-danger btn-sm" type="submit">Widerrufen</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Keine Erlaubnis dokumentiert.", "Ohne dokumentierte Erlaubnis bleibt der Kanal in Modus A: nur Links, Vorschauen und Empfehlungen.") }}
+  {% endif %}
+
+  {% if current_user.can_edit %}
+  <details class="disclosure" {% if not streamer.permissions %}open{% endif %}>
+    <summary>Neue Erlaubnis dokumentieren</summary>
+    <form method="post" action="/streamers/{{ streamer.id }}/permissions" class="form form-grid">
+      {{ m.csrf() }}
+      <label class="field">
+        <span>Erteilt von (Name)*</span>
+        <input type="text" name="granted_by_name" required maxlength="200">
+      </label>
+      <label class="field">
+        <span>Rolle des Erlaubnisgebers*</span>
+        <select name="granted_by_role">
+          {% for r in grantor_roles %}<option value="{{ r.value }}">{{ GRANTOR_LABELS[r] }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Kontakt (E-Mail, Discord …)</span>
+        <input type="text" name="contact" maxlength="300">
+      </label>
+      <label class="field">
+        <span>Gültig ab</span>
+        <input type="date" name="valid_from" value="{{ today }}">
+      </label>
+      <label class="field">
+        <span>Gültig bis (leer = unbefristet)</span>
+        <input type="date" name="valid_until">
+      </label>
+      <label class="field span-2">
+        <span>Nachweis*: Wo liegt die schriftliche Erlaubnis?</span>
+        <textarea name="evidence_reference" rows="2" required placeholder="z. B. Vereinbarung per E-Mail vom 12.11.2026, abgelegt unter /Verträge/kanal.pdf"></textarea>
+      </label>
+      <label class="field span-2">
+        <span>Umfang / Einschränkungen</span>
+        <textarea name="scope_note" rows="2" placeholder="z. B. nur Gameplay-Highlights, keine Gäste, nur TikTok-Konto @…"></textarea>
+      </label>
+      <fieldset class="span-2 checks">
+        <label><input type="checkbox" name="allows_processing" value="1" checked> Weiterverarbeitung erlaubt (Download, KI-Analyse, Schnitt)</label>
+        <label><input type="checkbox" name="allows_publishing" value="1"> Veröffentlichung auf TikTok erlaubt</label>
+        <label><input type="checkbox" name="switch_to_authorized" value="1" checked> Danach auf Modus B umstellen</label>
+        <label class="confirm"><input type="checkbox" name="confirmed" value="1" required> Ich bestätige, dass diese Erlaubnis schriftlich vorliegt und auf Nachfrage vorgelegt werden kann.</label>
+      </fieldset>
+      <div class="span-2"><button type="submit" class="btn btn-primary">Erlaubnis speichern</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><h2>Highlights</h2><a class="small" href="/highlights?streamer_id={{ streamer.id }}">Alle →</a></div>
+    {% if highlights %}
+    <ul class="list">
+      {% for h in highlights %}
+      <li class="list-row">
+        <a href="/highlights/{{ h.id }}" class="list-main"><strong>{{ h.title or ("Highlight #" ~ h.id) }}</strong>
+          <span class="muted small">{{ h.created_at | localtime }} · {{ h.duration | seconds }}</span></a>
+        <span class="list-side">{{ m.score(h.score) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ m.empty("Noch keine Highlights.") }}{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Öffentliche Clips</h2><a class="small" href="/clips?streamer_id={{ streamer.id }}">Alle →</a></div>
+    {% if clips %}
+    <ul class="list">
+      {% for c in clips %}
+      <li class="list-row">
+        <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer" class="list-main"><strong>{{ c.title }}</strong>
+          <span class="muted small">{{ c.view_count }} Aufrufe · {{ c.clip_created_at | timeago }}</span></a>
+        <span class="list-side">{{ m.score(c.discovery_score) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ m.empty("Noch keine Clips abgerufen.", "Ab Phase 2 werden öffentliche Clips über die Twitch-API gesammelt.") }}{% endif %}
+  </section>
+</div>
+
+{% if current_user.can_edit %}
+<section class="card">
+  <h2>Notizen</h2>
+  <form method="post" action="/streamers/{{ streamer.id }}/notes" class="form">
+    {{ m.csrf() }}
+    <textarea name="notes" rows="3" maxlength="5000" aria-label="Notizen">{{ streamer.notes or "" }}</textarea>
+    <button class="btn btn-ghost" type="submit">Speichern</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Aktivität</h2>
+  {% set recent = activity %}
+  {% include "partials/activity_table.html" with context %}
+</section>
+
+{% if current_user.can_edit %}
+<section class="card card-danger">
+  <h2>Streamer entfernen</h2>
+  <p class="muted small">Entfernt den Kanal inklusive Erlaubnis-Nachweisen, Tokens, Clips und Highlights aus der Datenbank. Das Aktivitätsprotokoll bleibt erhalten.</p>
+  <form method="post" action="/streamers/{{ streamer.id }}/delete" class="form form-inline" data-confirm="'{{ streamer.twitch_login }}' endgültig entfernen?">
+    {{ m.csrf() }}
+    <label class="field grow">
+      <span>Zur Bestätigung „{{ streamer.twitch_login }}“ eingeben</span>
+      <input type="text" name="confirm_login" autocomplete="off" autocapitalize="none" required>
+    </label>
+    <button type="submit" class="btn btn-danger">Endgültig entfernen</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{% import "partials/macros.html" as m with context %}
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f14">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}Übersicht{% endblock %} · {{ app_name }}</title>
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ version }}">
+  <script src="/static/js/app.js?v={{ version }}" defer></script>
+</head>
+<body class="{% if current_user %}has-nav{% else %}no-nav{% endif %}">
+{% if current_user %}
+  <header class="topbar">
+    <button class="nav-toggle" type="button" aria-controls="sidenav" aria-expanded="false" aria-label="Menü öffnen" data-nav-toggle>
+      <span></span><span></span><span></span>
+    </button>
+    <a class="brand" href="/">TwitchClip <span>AI</span></a>
+    {% if test_mode %}<span class="badge tone-warn">Testmodus</span>{% endif %}
+    <span class="topbar-user">{{ current_user.username }} · {{ ROLE_LABELS[current_user.role] }}</span>
+  </header>
+  <div class="layout">
+    <nav id="sidenav" class="sidenav" aria-label="Hauptnavigation">
+      {% set nav_items = [
+        ("dashboard", "/", "Übersicht"),
+        ("streamers", "/streamers", "Streamer"),
+        ("clips", "/clips", "Öffentliche Clips"),
+        ("highlights", "/highlights", "Highlights"),
+        ("queue", "/queue", "TikTok-Warteschlange"),
+        ("published", "/published", "Veröffentlicht"),
+        ("activity", "/activity", "Aktivität & Fehler"),
+        ("system", "/system", "System"),
+      ] %}
+      {% for key, href, label in nav_items %}
+        <a href="{{ href }}" class="{% if nav == key %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+      {% if current_user.is_admin %}
+        <a href="/users" class="{% if nav == 'users' %}active{% endif %}">Benutzer</a>
+      {% endif %}
+      <a href="/account" class="{% if nav == 'account' %}active{% endif %}">Mein Konto</a>
+      <form method="post" action="/logout" class="logout-form">
+        {{ m.csrf() }}
+        <button type="submit" class="btn btn-ghost btn-block">Abmelden</button>
+      </form>
+    </nav>
+    <div class="nav-backdrop" data-nav-close></div>
+    <main class="content" id="main">
+      {% include "partials/flashes.html" %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+{% else %}
+  <main class="content content-narrow" id="main">
+    {% include "partials/flashes.html" %}
+    {% block public %}{% endblock %}
+  </main>
+{% endif %}
+</body>
+</html>

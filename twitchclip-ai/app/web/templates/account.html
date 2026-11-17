@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Mein Konto{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Mein Konto</h1></div>
+<section class="card narrow">
+  <dl class="kv">
+    <dt>Benutzername</dt><dd>{{ current_user.username }}</dd>
+    <dt>Rolle</dt><dd>{{ ROLE_LABELS[current_user.role] }}</dd>
+    <dt>Letzter Login</dt><dd>{{ current_user.last_login_at | localtime }}</dd>
+  </dl>
+  <h2>Passwort ändern</h2>
+  <form method="post" action="/account/password" class="form">
+    {{ m.csrf() }}
+    <label class="field"><span>Aktuelles Passwort</span><input type="password" name="current_password" required autocomplete="current-password"></label>
+    <label class="field"><span>Neues Passwort (mind. 12 Zeichen)</span><input type="password" name="new_password" required minlength="12" autocomplete="new-password"></label>
+    <label class="field"><span>Neues Passwort wiederholen</span><input type="password" name="new_password_repeat" required minlength="12" autocomplete="new-password"></label>
+    <button type="submit" class="btn btn-primary">Passwort ändern</button>
+  </form>
+</section>
+{% endblock %}

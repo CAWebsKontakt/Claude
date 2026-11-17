@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}{{ highlight.title or ("Highlight #" ~ highlight.id) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ highlight.title or ("Highlight #" ~ highlight.id) }}</h1>
+    <p class="muted small"><a href="/streamers/{{ highlight.streamer.id }}">{{ highlight.streamer.name }}</a> · erkannt {{ highlight.created_at | localtime }}</p>
+  </div>
+  <div class="head-badges">{{ m.score(highlight.score) }} {{ m.highlight_status(highlight.status) }}</div>
+</div>
+
+<div class="grid-2 grid-media">
+  <section class="card">
+    <h2>Vorschau</h2>
+    {% if video %}
+      <video class="vertical-video" controls preload="metadata" playsinline
+        src="/media/videos/{{ video.id }}.mp4"
+        {% if video.thumbnail_path %}poster="/media/thumbnails/{{ video.id }}.jpg"{% endif %}></video>
+      <p class="muted small">{{ video.width }}×{{ video.height }} · {{ video.duration | seconds }} · {{ video.size_bytes | filesize }}
+        · <a href="/media/videos/{{ video.id }}/download">Herunterladen</a></p>
+    {% else %}
+      {{ m.empty("Noch kein geschnittenes Video vorhanden.") }}
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Details</h2>
+    <dl class="kv">
+      <dt>Quelle</dt><dd>{{ highlight.source_type }} · {{ highlight.source_ref }}</dd>
+      <dt>Ausschnitt</dt><dd>{{ highlight.start_seconds | seconds }} – {{ highlight.end_seconds | seconds }} ({{ highlight.duration | seconds }})</dd>
+      <dt>Sprache</dt><dd>{{ highlight.language or "–" }}</dd>
+      <dt>Hashtags</dt><dd>{% for tag in highlight.hashtags %}<span class="tag">#{{ tag }}</span> {% else %}–{% endfor %}</dd>
+      {% if highlight.error %}<dt>Fehler</dt><dd class="text-bad wrap">{{ highlight.error }}</dd>{% endif %}
+    </dl>
+    {% if highlight.description %}<h3>Beschreibung</h3><p class="preline">{{ highlight.description }}</p>{% endif %}
+    {% if highlight.score_breakdown %}
+    <h3>Bewertung im Detail</h3>
+    <dl class="kv">
+      {% for key, value in highlight.score_breakdown.items() %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}
+    </dl>
+    {% endif %}
+    {% if current_user.can_edit %}
+    <div class="button-row">
+      {% if highlight.status == "rejected" %}
+      <form method="post" action="/highlights/{{ highlight.id }}/restore">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Wiederherstellen</button></form>
+      {% elif highlight.status not in ["queued", "published"] %}
+      <form method="post" action="/highlights/{{ highlight.id }}/reject" data-confirm="Highlight verwerfen?">{{ m.csrf() }}<button class="btn btn-danger" type="submit">Verwerfen</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+{% if highlight.transcript %}
+<section class="card">
+  <h2>Transkript</h2>
+  <p class="transcript preline">{{ highlight.transcript }}</p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>TikTok-Verlauf</h2>
+  {% if jobs %}
+  <ul class="list">
+    {% for j in jobs %}
+    <li class="list-row"><span class="list-main">#{{ j.id }} · {{ PUBLISH_METHOD_LABELS.get(j.method, j.method) }} · {{ j.created_at | localtime }}</span>
+      <span class="list-side">{{ m.publish_status(j.status) }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}{{ m.empty("Noch nicht für TikTok vorgesehen.") }}{% endif %}
+</section>
+{% endblock %}

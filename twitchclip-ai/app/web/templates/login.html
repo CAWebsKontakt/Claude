@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Anmelden{% endblock %}
+{% block public %}
+<section class="card login-card">
+  <h1 class="brand brand-lg">TwitchClip <span>AI</span></h1>
+  <p class="muted">Bitte melden Sie sich an.</p>
+  {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/login" class="form">
+    {{ m.csrf() }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field">
+      <span>Benutzername</span>
+      <input type="text" name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    </label>
+    <label class="field">
+      <span>Passwort</span>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="btn btn-primary btn-block">Anmelden</button>
+  </form>
+</section>
+{% endblock %}

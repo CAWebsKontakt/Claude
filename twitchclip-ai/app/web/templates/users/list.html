@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Benutzer{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Benutzer</h1></div>
+
+<section class="card">
+  <h2>Neuen Benutzer anlegen</h2>
+  <form method="post" action="/users" class="form form-inline">
+    {{ m.csrf() }}
+    <label class="field grow"><span>Benutzername</span><input type="text" name="username" required autocapitalize="none" spellcheck="false" autocomplete="off"></label>
+    <label class="field grow"><span>Passwort (mind. 12 Zeichen)</span><input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
+    <label class="field">
+      <span>Rolle</span>
+      <select name="role">{% for r in roles %}<option value="{{ r.value }}" {% if r.value == "viewer" %}selected{% endif %}>{{ ROLE_LABELS[r] }}</option>{% endfor %}</select>
+    </label>
+    <button type="submit" class="btn btn-primary">Anlegen</button>
+  </form>
+  <p class="muted small">Administrator: alles inkl. Benutzerverwaltung · Redakteur: Streamer, Rechte, Highlights, Freigaben · Betrachter: nur lesen</p>
+</section>
+
+<section class="card">
+  <table class="table">
+    <thead><tr><th>Benutzer</th><th>Rolle</th><th>Status</th><th>Letzter Login</th><th>Aktionen</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr class="{% if not u.is_active %}is-muted{% endif %}">
+        <td data-label="Benutzer"><strong>{{ u.username }}</strong>{% if u.id == current_user.id %} <span class="muted small">(Sie)</span>{% endif %}</td>
+        <td data-label="Rolle">
+          <form method="post" action="/users/{{ u.id }}/role" class="form-inline">
+            {{ m.csrf() }}
+            <select name="role" aria-label="Rolle von {{ u.username }}">{% for r in roles %}<option value="{{ r.value }}" {% if u.role == r.value %}selected{% endif %}>{{ ROLE_LABELS[r] }}</option>{% endfor %}</select>
+            <button class="btn btn-ghost btn-sm" type="submit">Setzen</button>
+          </form>
+        </td>
+        <td data-label="Status">{{ m.badge("aktiv", "good") if u.is_active else m.badge("deaktiviert", "neutral") }}</td>
+        <td data-label="Letzter Login">{{ u.last_login_at | localtime }}</td>
+        <td data-label="Aktionen" class="actions">
+          <form method="post" action="/users/{{ u.id }}/active">
+            {{ m.csrf() }}
+            <input type="hidden" name="active" value="{{ '0' if u.is_active else '1' }}">
+            <button class="btn btn-ghost btn-sm" type="submit">{{ "Deaktivieren" if u.is_active else "Aktivieren" }}</button>
+          </form>
+          <details class="inline-details">
+            <summary class="btn btn-ghost btn-sm">Passwort setzen</summary>
+            <form method="post" action="/users/{{ u.id }}/password" class="form-inline">
+              {{ m.csrf() }}
+              <input type="password" name="password" minlength="12" required autocomplete="new-password" aria-label="Neues Passwort" class="input-sm">
+              <button class="btn btn-primary btn-sm" type="submit">Speichern</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

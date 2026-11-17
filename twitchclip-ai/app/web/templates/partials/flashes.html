@@ -1,0 +1,10 @@
+{% if flashes %}
+<div class="flashes" role="status" aria-live="polite">
+  {% for category, message in flashes %}
+  <div class="flash flash-{{ category }}" data-flash>
+    <span>{{ message }}</span>
+    <button type="button" class="flash-close" aria-label="Hinweis schließen" data-flash-close>×</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

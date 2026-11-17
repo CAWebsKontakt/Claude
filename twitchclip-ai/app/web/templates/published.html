@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Veröffentlicht{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Veröffentlichte Videos</h1></div>
+<section class="card">
+  {% if jobs %}
+  <table class="table">
+    <thead><tr><th>Video</th><th>Streamer</th><th>Weg</th><th>Status</th><th>Datum</th><th>TikTok</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr>
+        <td data-label="Video"><a href="/highlights/{{ j.highlight_id }}">{{ j.highlight.title or ("Highlight #" ~ j.highlight_id) }}</a></td>
+        <td data-label="Streamer">{{ j.highlight.streamer.name }}</td>
+        <td data-label="Weg">{{ PUBLISH_METHOD_LABELS.get(j.method, j.method) }}</td>
+        <td data-label="Status">{{ m.publish_status(j.status) }}</td>
+        <td data-label="Datum">{{ (j.published_at or j.updated_at) | localtime }}</td>
+        <td data-label="TikTok">
+          {% if j.tiktok_post_id and j.tiktok_account and j.tiktok_account.username %}
+            <a href="https://www.tiktok.com/@{{ j.tiktok_account.username }}/video/{{ j.tiktok_post_id }}" target="_blank" rel="noopener noreferrer">Ansehen</a>
+          {% elif j.status == "sent_to_inbox" %}<span class="muted small">in der TikTok-App fertigstellen</span>
+          {% else %}–{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Noch nichts veröffentlicht.") }}
+  {% endif %}
+</section>
+{% endblock %}

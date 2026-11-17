@@ -1,0 +1,215 @@
+# TwitchClip AI – Produktions-Setup für einen Ubuntu-24.04-VPS
+#
+#   docker compose up -d --build        starten/aktualisieren
+#   docker compose ps                   Status
+#   docker compose logs -f web worker   Logs
+#
+# Alle Dienste starten nach einem Server-Neustart automatisch (restart: unless-stopped,
+# Docker-Dienst per systemd aktiviert). Speicher- und CPU-Grenzen sind je Dienst gesetzt.
+
+name: twitchclip
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  image: twitchclip-ai:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-twitchclip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env}@postgres:5432/${POSTGRES_DB:-twitchclip}
+    REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD fehlt in .env}@redis:6379/0
+    DATA_DIR: /data
+    TZ: ${TIMEZONE:-Europe/Berlin}
+    TCAI_ENV_FILE: ""
+  volumes:
+    - media_data:/data
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - backend
+    - egress
+
+services:
+  # Einmaliger Start-Job: Migrationen, Verzeichnisse, STREAMER_LIST importieren
+  migrate:
+    <<: *app
+    command: ["python", "-m", "app.cli", "bootstrap"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { memory: 256m, cpus: "0.5" }
+
+  web:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Nur lokal erreichbar (SSH-Tunnel/Diagnose). Öffentlich ausschließlich über Caddy (HTTPS).
+    ports:
+      - "127.0.0.1:8000:8000"
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+
+  # Leichte Jobs: Twitch-API, Clip-Suche, Token-Refresh, Wartung
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.workers.worker", "default", "publish"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+
+  # Schwere Jobs: Download, Whisper, FFmpeg – bewusst nur ein Prozess (Concurrency 1).
+  worker-media:
+    <<: *app
+    command: ["python", "-m", "app.workers.worker", "media"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits: { memory: "${MEDIA_WORKER_MEMORY:-3g}", cpus: "${MEDIA_WORKER_CPUS:-2.0}" }
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "app.workers.scheduler"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits: { memory: 192m, cpus: "0.25" }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-twitchclip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-twitchclip}
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=60
+      - -c
+      - work_mem=8MB
+      - -c
+      - log_min_duration_statement=2000
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+
+  redis:
+    image: redis:7-alpine
+    # noeviction ist für RQ zwingend: Jobs dürfen nie still verdrängt werden.
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD fehlt in .env}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 192mb
+      - --maxmemory-policy
+      - noeviction
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { memory: 256m, cpus: "0.5" }
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN fehlt in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL fehlt in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+    networks: [egress]
+    deploy:
+      resources:
+        limits: { memory: 128m, cpus: "0.5" }
+
+  # Tests im Container: docker compose --profile test run --rm test
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_DEV: "true"
+    image: twitchclip-ai:test
+    profiles: ["test"]
+    command: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    environment:
+      TCAI_ENV_FILE: ""
+    networks: [egress]
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  # Datenbank und Redis ohne Internetzugang
+  backend:
+    internal: true
+  egress:

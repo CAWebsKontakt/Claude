@@ -1,0 +1,55 @@
+{% macro csrf() -%}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+{%- endmacro %}
+
+{% macro badge(text, tone="neutral") -%}
+<span class="badge tone-{{ tone }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro score(value) -%}
+{% set v = (value or 0) | round(0) | int %}
+<span class="score tone-{{ value | score_tone }}" title="Qualitätsbewertung {{ v }}/100">
+  <meter min="0" max="100" low="40" high="75" optimum="100" value="{{ v }}">{{ v }}</meter>
+  <strong>{{ v }}</strong>
+</span>
+{%- endmacro %}
+
+{% macro live_badge(streamer) -%}
+{% if streamer.is_live %}<span class="badge tone-live">● LIVE</span>{% else %}<span class="badge tone-neutral">offline</span>{% endif %}
+{%- endmacro %}
+
+{% macro mode_badge(mode) -%}
+{% if mode == "authorized" %}{{ badge("Modus B", "ok") }}{% else %}{{ badge("Modus A", "neutral") }}{% endif %}
+{%- endmacro %}
+
+{% macro highlight_status(status) -%}
+{% set tones = {"candidate": "info", "rendered": "ok", "queued": "ok", "published": "good", "rejected": "neutral", "duplicate": "neutral", "rendering": "info", "failed": "bad"} %}
+{{ badge(HIGHLIGHT_STATUS_LABELS.get(status, status), tones.get(status, "neutral")) }}
+{%- endmacro %}
+
+{% macro publish_status(status) -%}
+{% set tones = {"pending_review": "warn", "approved": "info", "uploading": "info", "processing": "info", "sent_to_inbox": "good", "published": "good", "exported": "good", "failed": "bad", "cancelled": "neutral"} %}
+{{ badge(PUBLISH_STATUS_LABELS.get(status, status), tones.get(status, "neutral")) }}
+{%- endmacro %}
+
+{% macro level_badge(level) -%}
+{% set tones = {"info": "info", "warning": "warn", "error": "bad"} %}
+{{ badge(level | upper, tones.get(level, "neutral")) }}
+{%- endmacro %}
+
+{% macro empty(text, hint=None) -%}
+<div class="empty">
+  <p>{{ text }}</p>
+  {% if hint %}<p class="muted small">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro pager(page, has_next, params) -%}
+{% if page > 1 or has_next %}
+<nav class="pager" aria-label="Seiten">
+  {% if page > 1 %}<a class="btn btn-ghost btn-sm" href="?{{ params }}&page={{ page - 1 }}">← Zurück</a>{% endif %}
+  <span class="muted">Seite {{ page }}</span>
+  {% if has_next %}<a class="btn btn-ghost btn-sm" href="?{{ params }}&page={{ page + 1 }}">Weiter →</a>{% endif %}
+</nav>
+{% endif %}
+{%- endmacro %}

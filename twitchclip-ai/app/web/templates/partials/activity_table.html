@@ -1,0 +1,22 @@
+{% import "partials/macros.html" as m with context %}
+{% set rows = recent if recent is defined else entries %}
+{% if rows %}
+<table class="table">
+  <thead><tr><th>Zeit</th><th>Stufe</th><th>Bereich</th><th>Meldung</th></tr></thead>
+  <tbody>
+  {% for e in rows %}
+    <tr class="level-{{ e.level }}">
+      <td data-label="Zeit"><time title="{{ e.created_at | localtime('%d.%m.%Y %H:%M:%S') }}">{{ e.created_at | localtime }}</time></td>
+      <td data-label="Stufe">{{ m.level_badge(e.level) }}</td>
+      <td data-label="Bereich"><span class="muted">{{ e.category }}</span></td>
+      <td data-label="Meldung" class="wrap">
+        {{ e.message }}
+        {% if e.user %}<span class="muted small">· {{ e.user.username }}</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  {{ m.empty("Noch keine Einträge.") }}
+{% endif %}

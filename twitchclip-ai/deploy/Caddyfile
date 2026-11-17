@@ -1,0 +1,40 @@
+# Caddy: automatisches HTTPS (Let's Encrypt) und Reverse-Proxy zu FastAPI.
+# DOMAIN und ACME_EMAIL kommen aus der .env (siehe docker-compose.yml).
+{
+	email {$ACME_EMAIL}
+	# Admin-API nicht nach außen öffnen
+	admin off
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Uploads von Rechte-Nachweisen/Formularen begrenzen (Videos werden nie hochgeladen)
+	request_body {
+		max_size 10MB
+	}
+
+	# Caddy setzt X-Forwarded-For/-Proto/-Host automatisch; uvicorn wertet sie aus (--proxy-headers).
+	reverse_proxy web:8000 {
+		# Kurze Neustarts von "web" (Deploy) abfedern statt sofort 502 zu liefern
+		lb_try_duration 30s
+		lb_try_interval 1s
+		# Lange Video-Downloads/Range-Requests nicht abbrechen
+		transport http {
+			read_timeout 5m
+			write_timeout 5m
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

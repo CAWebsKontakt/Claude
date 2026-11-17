@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Öffentliche Clips{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Öffentliche Clips</h1></div>
+<p class="notice">
+  <strong>Modus A:</strong> Diese Clips stammen aus der öffentlichen Twitch-API. Angezeigt werden nur Links,
+  Vorschaubilder und Bewertungen. Ohne dokumentierte Erlaubnis werden keine Videos heruntergeladen,
+  bearbeitet oder veröffentlicht.
+</p>
+
+<form method="get" action="/clips" class="card form form-inline filters">
+  <label class="field">
+    <span>Streamer</span>
+    <select name="streamer_id">
+      <option value="">Alle</option>
+      {% for s in streamers %}<option value="{{ s.id }}" {% if filters.streamer_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="check-inline"><input type="checkbox" name="show_dismissed" value="1" {% if filters.show_dismissed %}checked{% endif %}> Ausgeblendete zeigen</label>
+  <button class="btn btn-ghost" type="submit">Filtern</button>
+</form>
+
+{% if items %}
+<section class="tiles tiles-wide">
+  {% for c in items %}
+  <article class="tile">
+    <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer" class="tile-media tile-media-wide">
+      {% if c.thumbnail_url %}<img src="{{ c.thumbnail_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}<span class="tile-placeholder">Clip</span>{% endif %}
+      <span class="tile-duration">{{ c.duration | seconds }}</span>
+    </a>
+    <div class="tile-body">
+      <div class="tile-top">{{ m.score(c.discovery_score) }} {% if c.is_featured %}{{ m.badge("Featured", "info") }}{% endif %}</div>
+      <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer"><strong>{{ c.title }}</strong></a>
+      <p class="muted small">{{ c.streamer.name }} · {{ c.view_count }} Aufrufe · {{ c.clip_created_at | timeago }}{% if c.creator_name %} · geclippt von {{ c.creator_name }}{% endif %}</p>
+      {% if current_user.can_edit and c.status != "dismissed" %}
+      <form method="post" action="/clips/{{ c.id }}/dismiss">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Ausblenden</button></form>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{{ m.pager(page, has_next, "streamer_id=" ~ (filters.streamer_id or "") ~ "&show_dismissed=" ~ (filters.show_dismissed or 0)) }}
+{% else %}
+<section class="card">{{ m.empty("Noch keine Clips vorhanden.", "Die automatische Clip-Suche über Twitch Helix folgt in Phase 2.") }}</section>
+{% endif %}
+{% endblock %}

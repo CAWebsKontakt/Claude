@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Aktivität & Fehler{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Aktivität &amp; Fehler</h1></div>
+<form method="get" action="/activity" class="card form form-inline filters">
+  <label class="field">
+    <span>Stufe</span>
+    <select name="level">
+      <option value="">Alle</option>
+      {% for lv in levels %}<option value="{{ lv.value }}" {% if filters.level == lv.value %}selected{% endif %}>{{ lv.value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>Bereich</span>
+    <select name="category">
+      <option value="">Alle</option>
+      {% for c in categories %}<option value="{{ c.value }}" {% if filters.category == c.value %}selected{% endif %}>{{ c.value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>Streamer</span>
+    <select name="streamer_id">
+      <option value="">Alle</option>
+      {% for s in streamers %}<option value="{{ s.id }}" {% if filters.streamer_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-ghost" type="submit">Filtern</button>
+</form>
+<section class="card">
+  {% include "partials/activity_table.html" with context %}
+  {{ m.pager(page, has_next, "level=" ~ filters.level ~ "&category=" ~ filters.category ~ "&streamer_id=" ~ (filters.streamer_id or "")) }}
+</section>
+{% endblock %}

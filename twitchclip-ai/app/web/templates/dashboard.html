@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Übersicht{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Übersicht</h1>
+  <a class="btn btn-primary" href="/streamers#add">+ Streamer</a>
+</div>
+
+<section class="stats">
+  <a class="stat" href="/streamers">
+    <span class="stat-label">Streamer</span>
+    <strong class="stat-value">{{ stats.streamers }}</strong>
+    <span class="stat-sub">{{ stats.streamers_active }} aktiv · {{ stats.streamers_authorized }} autorisiert</span>
+  </a>
+  <a class="stat {% if stats.streamers_live %}stat-live{% endif %}" href="/streamers">
+    <span class="stat-label">Gerade live</span>
+    <strong class="stat-value">{{ stats.streamers_live }}</strong>
+    <span class="stat-sub">laut EventSub/Polling</span>
+  </a>
+  <a class="stat" href="/highlights">
+    <span class="stat-label">Offene Highlights</span>
+    <strong class="stat-value">{{ stats.highlights_open }}</strong>
+    <span class="stat-sub">heute {{ stats.highlights_today }} / max. {{ max_clips_per_day }}</span>
+  </a>
+  <a class="stat" href="/clips">
+    <span class="stat-label">Clip-Empfehlungen</span>
+    <strong class="stat-value">{{ stats.clips_recommended }}</strong>
+    <span class="stat-sub">öffentliche Clips (Modus A)</span>
+  </a>
+  <a class="stat" href="/queue">
+    <span class="stat-label">TikTok-Warteschlange</span>
+    <strong class="stat-value">{{ stats.queue }}</strong>
+    <span class="stat-sub">warten auf Freigabe/Upload</span>
+  </a>
+  <a class="stat" href="/published">
+    <span class="stat-label">Veröffentlicht</span>
+    <strong class="stat-value">{{ stats.published }}</strong>
+    <span class="stat-sub">inkl. Inbox &amp; Export</span>
+  </a>
+  <a class="stat {% if stats.errors_24h %}stat-bad{% endif %}" href="/activity?level=error">
+    <span class="stat-label">Fehler (24 h)</span>
+    <strong class="stat-value">{{ stats.errors_24h }}</strong>
+    <span class="stat-sub">im Aktivitätsprotokoll</span>
+  </a>
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Live-Kanäle</h2>
+    {% if live %}
+    <ul class="list">
+      {% for s in live %}
+      <li class="list-row">
+        <a href="/streamers/{{ s.id }}" class="list-main">
+          <strong>{{ s.name }}</strong>
+          <span class="muted small">{{ s.live_game_name or "–" }} · {{ s.live_title or "" }}</span>
+        </a>
+        <span class="list-side">{{ m.live_badge(s) }} <span class="muted small">{{ s.live_viewer_count or 0 }} Zuschauer</span></span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      {{ m.empty("Aktuell ist kein überwachter Kanal live.") }}
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Beste Highlights</h2>
+    {% if top_highlights %}
+    <ul class="list">
+      {% for h in top_highlights %}
+      <li class="list-row">
+        <a href="/highlights/{{ h.id }}" class="list-main">
+          <strong>{{ h.title or ("Highlight #" ~ h.id) }}</strong>
+          <span class="muted small">{{ h.streamer.name }} · {{ h.duration | seconds }}</span>
+        </a>
+        <span class="list-side">{{ m.score(h.score) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      {{ m.empty("Noch keine Highlights erkannt.", "Highlights entstehen nur für autorisierte Streamer (Modus B) oder im Testmodus.") }}
+    {% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Letzte Aktivität</h2>
+    <a href="/activity" class="small">Alle anzeigen →</a>
+  </div>
+  {% include "partials/activity_table.html" with context %}
+</section>
+{% endblock %}
