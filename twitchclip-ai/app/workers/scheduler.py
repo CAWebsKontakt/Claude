@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from redis import Redis
 from redis.exceptions import RedisError
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.logging_setup import configure_logging
 from app.redis_client import get_redis
 from app.workers.queues import QUEUE_DEFAULT, enqueue_unique, make_job_id
@@ -35,12 +35,37 @@ class PeriodicJob:
     timeout: int | None = None
 
 
-# Phase 1: Wartung. Weitere Jobs (Live-Status, Clip-Suche, Token-Refresh, TikTok-Status)
-# werden in den folgenden Phasen ergänzt.
+# Wartungsjobs – laufen immer.
 PERIODIC_JOBS: tuple[PeriodicJob, ...] = (
     PeriodicJob("storage_cleanup", "app.workers.jobs.maintenance.cleanup_storage_job", 3600),
     PeriodicJob("prune_activity", "app.workers.jobs.maintenance.prune_activity_job", 86400),
 )
+
+TWITCH_JOBS = "app.workers.jobs.twitch"
+
+
+def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
+    """Alle periodischen Jobs für die aktuelle Konfiguration."""
+    jobs = list(PERIODIC_JOBS)
+    if settings.twitch_configured and not settings.test_mode:
+        jobs += [
+            PeriodicJob("twitch_resolve", f"{TWITCH_JOBS}.resolve_streamers_job", 600),
+            PeriodicJob("twitch_refresh_known", f"{TWITCH_JOBS}.resolve_streamers_job_refresh", 86400),
+            PeriodicJob(
+                "twitch_poll_live",
+                f"{TWITCH_JOBS}.poll_live_status_job",
+                settings.twitch_poll_interval_seconds,
+            ),
+            PeriodicJob("twitch_eventsub_sync", f"{TWITCH_JOBS}.sync_eventsub_job", 6 * 3600),
+            PeriodicJob(
+                "twitch_discover_clips",
+                f"{TWITCH_JOBS}.discover_clips_job",
+                settings.clip_discovery_interval_minutes * 60,
+                timeout=1800,
+            ),
+            PeriodicJob("twitch_prune_clips", f"{TWITCH_JOBS}.prune_twitch_clips_job", 86400),
+        ]
+    return tuple(jobs)
 
 
 def tick(redis: Redis, jobs: tuple[PeriodicJob, ...] = PERIODIC_JOBS, now: float | None = None) -> list[str]:
@@ -79,12 +104,13 @@ def run_forever() -> None:
 
     signal.signal(signal.SIGTERM, _handle)
     signal.signal(signal.SIGINT, _handle)
-    logger.info("Scheduler gestartet", extra={"jobs": [j.name for j in PERIODIC_JOBS]})
+    jobs = build_periodic_jobs(settings)
+    logger.info("Scheduler gestartet", extra={"jobs": [j.name for j in jobs]})
     redis = get_redis()
     backoff = TICK_SECONDS
     while not stop.requested:
         try:
-            names = tick(redis)
+            names = tick(redis, jobs)
             if names:
                 logger.info("Periodische Jobs eingereiht", extra={"jobs": names})
             backoff = TICK_SECONDS

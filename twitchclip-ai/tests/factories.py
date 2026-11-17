@@ -88,7 +88,7 @@ def twitch_clip(
         creator_name="zuschauer",
         view_count=kwargs.pop("view_count", 1234),
         duration=28.5,
-        clip_created_at=utcnow() - timedelta(hours=3),
+        clip_created_at=kwargs.pop("clip_created_at", utcnow() - timedelta(hours=3)),
         discovery_score=kwargs.pop("discovery_score", 81.0),
         **kwargs,
     )

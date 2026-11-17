@@ -38,6 +38,7 @@
         <td data-label="Kanal">
           <a href="/streamers/{{ s.id }}"><strong>{{ s.name }}</strong></a>
           <div class="muted small">{{ s.twitch_login }}{% if not s.twitch_user_id %} · ID ausstehend{% endif %}</div>
+          {% if s.last_error %}<div class="small text-bad">{{ s.last_error }}</div>{% endif %}
         </td>
         <td data-label="Status">
           {{ m.live_badge(s) }}

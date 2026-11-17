@@ -12,13 +12,22 @@ from sqlalchemy.orm import Session, selectinload
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.enums import GrantorRole, StreamerMode
-from app.models import ActivityLog, Highlight, Streamer, StreamerPermission, TwitchClip, User
+from app.models import (
+    ActivityLog,
+    EventSubSubscription,
+    Highlight,
+    Streamer,
+    StreamerPermission,
+    TwitchClip,
+    User,
+)
 from app.services import streamers as streamer_service
 from app.services.permissions import PermissionError_, PermissionInput, add_permission, revoke_permission
 from app.services.streamers import StreamerError, compute_rights
 from app.web.deps import csrf_protect, require_editor, require_user
 from app.web.flash import flash
 from app.web.templating import render
+from app.workers.jobs.twitch import schedule_eventsub_sync, schedule_streamer_refresh, twitch_available
 
 router = APIRouter(prefix="/streamers")
 
@@ -82,12 +91,11 @@ def create_streamer(
         db.rollback()
         flash(request, str(exc), "error")
         return _redirect()
-    flash(
-        request,
-        f"'{streamer.twitch_login}' wurde hinzugefügt (Modus A – öffentlich). "
-        "Die Twitch-ID wird automatisch abgefragt, sobald die Twitch-API konfiguriert ist.",
-        "success",
-    )
+    if schedule_streamer_refresh(streamer.id):
+        hint = "Twitch-Daten, Live-Status und Clips werden jetzt im Hintergrund abgefragt."
+    else:
+        hint = "Die Twitch-ID wird automatisch abgefragt, sobald die Twitch-API konfiguriert ist."
+    flash(request, f"'{streamer.twitch_login}' wurde hinzugefügt (Modus A – öffentlich). {hint}", "success")
     return _redirect(streamer.id)
 
 
@@ -118,6 +126,11 @@ def streamer_detail(
         .order_by(ActivityLog.created_at.desc())
         .limit(15)
     ).all()
+    subscriptions = db.scalars(
+        select(EventSubSubscription)
+        .where(EventSubSubscription.streamer_id == streamer.id)
+        .order_by(EventSubSubscription.type)
+    ).all()
     return render(
         request,
         "streamers/detail.html",
@@ -129,6 +142,9 @@ def streamer_detail(
             "activity": activity,
             "grantor_roles": list(GrantorRole),
             "today": datetime.now(settings.tz).date().isoformat(),
+            "subscriptions": subscriptions,
+            "twitch_available": twitch_available(settings),
+            "eventsub_active": settings.eventsub_webhooks_active,
             "nav": "streamers",
         },
     )
@@ -145,7 +161,25 @@ def toggle_active(
     streamer = _load(db, streamer_id)
     streamer_service.set_active(db, streamer, active == "1", actor=user)
     db.commit()
+    schedule_eventsub_sync()
     flash(request, "Überwachung aktualisiert.", "success")
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/refresh", dependencies=[Depends(csrf_protect)])
+def refresh_from_twitch(
+    request: Request,
+    streamer_id: int,
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    streamer = _load(db, streamer_id)
+    if not twitch_available():
+        flash(request, "Twitch-API ist nicht konfiguriert (oder Testmodus aktiv).", "error")
+    elif schedule_streamer_refresh(streamer.id):
+        flash(request, "Abfrage gestartet – die Seite in einigen Sekunden neu laden.", "success")
+    else:
+        flash(request, "Eine Abfrage für diesen Kanal läuft bereits.", "info")
     return _redirect(streamer.id)
 
 
@@ -198,6 +232,7 @@ def delete_streamer(
     login = streamer.twitch_login
     streamer_service.remove_streamer(db, streamer, actor=user)
     db.commit()
+    schedule_eventsub_sync()  # Abos des entfernten Kanals bei Twitch löschen
     flash(request, f"'{login}' wurde entfernt.", "success")
     return _redirect()
 

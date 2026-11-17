@@ -135,3 +135,28 @@ def admin_client(client, make_user):
     response = login(client)
     assert response.status_code == 303
     return client
+
+
+@pytest.fixture
+def twitch_settings(settings, monkeypatch):
+    """Konfiguration mit Twitch-Zugangsdaten und öffentlicher HTTPS-Domain (EventSub aktiv)."""
+    from tests.twitch_payloads import EVENTSUB_SECRET
+
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setenv("TWITCH_EVENTSUB_SECRET", EVENTSUB_SECRET)
+    monkeypatch.setenv("APP_BASE_URL", "https://clips.example.com")
+    reset_settings_cache()
+    return get_settings()
+
+
+@pytest.fixture
+def helix(twitch_settings, redis):
+    """HelixClient mit aufgezeichneten (nicht ausgeführten) Wartezeiten."""
+    from app.integrations.twitch.client import HelixClient
+
+    sleeps: list[float] = []
+    client = HelixClient(twitch_settings, redis, sleep=sleeps.append)
+    client.sleeps = sleeps
+    yield client
+    client.close()

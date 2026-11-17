@@ -140,11 +140,30 @@ Alle Zeitstempel werden in UTC gespeichert und im Dashboard in `TIMEZONE` (Europ
 * **Wiederholungen:** exponentielles Backoff (1 min → 5 min → 15 min); bei HTTP 429 wird `Ratelimit-Reset`
   (Twitch) bzw. die Antwort von TikTok respektiert. Fehlgeschlagene Jobs bleiben 7 Tage in der Failed-Registry und
   erscheinen auf der Systemseite.
-* **Periodische Jobs** (`app/workers/scheduler.py`): Phase 1 Speicherbereinigung (stündlich) und
-  Protokollrotation (täglich); ab Phase 2 Live-Status-Abgleich, Clip-Suche, EventSub-Abgleich, Token-Refresh;
-  ab Phase 6 TikTok-Statusabfragen.
-* **Rate-Limits:** zentraler Token-Bucket in Redis je API und Token (Phase 2), damit auch mehrere Worker
-  gemeinsam unter dem Limit bleiben.
+* **Periodische Jobs** (`app/workers/scheduler.py`):
+
+  | Job | Intervall | Zweck |
+  |---|---|---|
+  | `storage_cleanup` | 1 h | Videodateien nach Frist/Obergrenze löschen |
+  | `prune_activity` | 24 h | Aktivitätsprotokoll kürzen |
+  | `twitch_resolve` | 10 min | neue Streamer: Twitch-ID, Name, Profilbild, Sprache |
+  | `twitch_refresh_known` | 24 h | umbenannte Logins/Profilbilder bekannter Kanäle |
+  | `twitch_poll_live` | `TWITCH_POLL_INTERVAL_SECONDS` | Live-Status per Get Streams (Rückfallebene zu EventSub) |
+  | `twitch_eventsub_sync` | 6 h | EventSub-Abos abgleichen (fehlende anlegen, defekte/überzählige löschen) |
+  | `twitch_discover_clips` | `CLIP_DISCOVERY_INTERVAL_MINUTES` | öffentliche Clips suchen und bewerten |
+  | `twitch_prune_clips` | 24 h | Clip-Metadaten nach `CLIP_RETENTION_DAYS` löschen |
+
+  Twitch-Jobs werden nur eingeplant, wenn Client-ID/Secret gesetzt sind und `TEST_MODE=false` ist.
+  Ereignisgesteuert: nach `stream.online` Details nachladen (60 s), nach `stream.offline` VOD zuordnen (3 min,
+  bis zu 4 Versuche) und Clips des Streams suchen (15 min). Ab Phase 3 kommen Token-Refresh, ab Phase 6
+  TikTok-Statusabfragen hinzu.
+* **Rate-Limits:** Die von Twitch gemeldeten Werte (`Ratelimit-Remaining`/`-Reset`) werden prozessübergreifend
+  in Redis gehalten. Vor jeder Anfrage bleibt ein Puffer von 10 Punkten frei; reicht das Kontingent nicht,
+  wird bis zu 15 s gewartet, sonst gibt der Job an RQ zurück. Bei HTTP 429 wird bis zum Reset gewartet,
+  bei 401 einmal ein neues App-Token geholt, bei 5xx/Netzwerkfehlern zweimal mit Backoff wiederholt.
+* **Live-Status ohne Flackern:** EventSub und Polling schreiben über dieselben idempotenten Funktionen.
+  Ein beendeter Stream (gleiche Stream-ID) wird nie wieder geöffnet; direkt nach `stream.online` gilt eine
+  Karenz von 5 Minuten, weil Get Streams neue Streams verzögert liefert.
 
 ## 6. Speicher-Lebenszyklus
 
@@ -182,7 +201,7 @@ twitchclip-ai/
 ├── .env.example                  ✓ sichere Vorlage (keine echten Geheimnisse)
 ├── requirements*.txt, pyproject.toml, alembic.ini   ✓
 ├── deploy/Caddyfile              ✓ HTTPS + Reverse-Proxy
-├── migrations/                   ✓ Alembic (0001 initiales Schema)
+├── migrations/                   ✓ Alembic (0001 initiales Schema, 0002 Twitch-Überwachung)
 ├── scripts/                      ✓ install_vps, init_env, backup, restore, healthcheck, update
 ├── docs/                         ✓ Architektur, API-Grenzen, Installation, Registrierung, Betrieb, Tests
 ├── tests/                        ✓ pytest (SQLite/PostgreSQL, fakeredis, später respx-Mocks)
@@ -191,19 +210,20 @@ twitchclip-ai/
     ├── cli.py                    ✓ Verwaltung (Benutzer, Streamer, Secrets, Bereinigung, Key-Rotation)
     ├── main.py                   ✓ FastAPI-App
     ├── security/                 ✓ crypto (Fernet), passwords (Argon2), csrf, ratelimit
-    ├── services/                 ✓ activity, users, streamers (Rechte), permissions, storage, system
+    ├── services/                 ✓ activity, users, streamers (Rechte), permissions, storage, system,
+    │                               ✓ twitch_monitor, eventsub_handler, clip_discovery, clip_scoring
     ├── workers/                  ✓ queues, worker, scheduler, jobs/maintenance
-    │   └── jobs/twitch.py        2  Streamer auflösen, Live-Status, Clip-Suche, EventSub-Abgleich
+    │   └── jobs/twitch.py        ✓  Streamer auflösen, Live-Status, Clip-Suche, EventSub-Abgleich, VOD-Zuordnung
     │   └── jobs/clips.py         3  Clip aus VOD erzeugen, Download, Rechteprüfung
     │   └── jobs/analysis.py      4  KI-Analyse und Auswahl
     │   └── jobs/render.py        5  Schnitt, Untertitel, Metadaten
     │   └── jobs/publish.py       6  TikTok-Upload und Statusverfolgung
-    ├── integrations/twitch/      2/3 Helix-Client, App-/User-OAuth, EventSub, Rate-Limit
+    ├── integrations/twitch/      ✓  Helix-Client, App-Token, EventSub, Rate-Limit (User-OAuth: Phase 3)
     ├── integrations/tiktok/      6  OAuth (PKCE), Creator-Info, Direct Post / Inbox-Upload, Status
     ├── ai/                       4  audio, transcribe (faster-whisper), vision (OpenCV), chat_signals, scoring, dedup
     ├── media/                    5  layout (Facecam/Gameplay), subtitles (ASS), render (FFmpeg), metadata
     └── web/                      ✓ routes/, templates/, static/ (mobiloptimiert, ohne externe CDNs)
-        └── routes/webhooks.py    2  EventSub-Endpunkt
+        └── routes/webhooks.py    ✓  EventSub-Endpunkt
         └── routes/oauth.py       3/6 OAuth-Callbacks Twitch/TikTok
 ```
 

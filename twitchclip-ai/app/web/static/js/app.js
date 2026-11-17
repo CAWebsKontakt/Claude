@@ -20,6 +20,22 @@
       setNav(false);
       return;
     }
+    // Offizieller Twitch-Clip-Player erst bei Klick laden (spart Bandbreite, keine Tracker vorab)
+    var play = target.closest("[data-embed-src]");
+    if (play) {
+      var box = play.closest("[data-embed-target]");
+      if (box) {
+        var frame = document.createElement("iframe");
+        frame.src = play.getAttribute("data-embed-src");
+        frame.title = "Twitch-Clip";
+        frame.allowFullscreen = true;
+        frame.setAttribute("allow", "autoplay; fullscreen");
+        frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+        frame.className = "embed-frame";
+        box.replaceChildren(frame);
+      }
+      return;
+    }
     var close = target.closest("[data-flash-close]");
     if (close) {
       var flash = close.closest("[data-flash]");

@@ -2,8 +2,8 @@
 
 ## Automatisierte Tests
 
-Die Suite (100 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
-(Twitch/TikTok, ab Phase 2) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
+Die Suite (145 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+(Twitch, ab Phase 6 TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
 # lokal (Python 3.12)
@@ -33,6 +33,11 @@ docker compose --profile test run --rm --build test
 | `test_media.py` | Videoauslieferung nur mit Login, HTTP-Range (Spulen), keine Dateien außerhalb von `/data` |
 | `test_migrations.py` | Upgrade/Downgrade auf SQLite; auf PostgreSQL zusätzlich: Migration entspricht exakt den Modellen |
 | `test_cli.py` | Secrets erzeugen, Benutzer/Passwort, Streamer per CLI, Konfigurationsprüfung, Token-Key-Rotation |
+| `test_twitch_client.py` | App-Token (Cache, verschlüsselt, 401-Erneuerung), Rate-Limit/429, 5xx-Wiederholung, Batching, Paginierung, EventSub-API |
+| `test_eventsub.py` | HMAC-Signatur, Alter, Duplikate, Challenge, online/offline per Webhook inkl. Folgejobs, Widerruf |
+| `test_twitch_monitor.py` | IDs auflösen, Umbenennung, Live-Lebenszyklus, Karenzzeit, VOD-Zuordnung, EventSub-Abgleich, Kostenlimit |
+| `test_clip_discovery.py` | Zeitfenster, Bewertung (relativ, Häufung, Länge), Upsert ohne Duplikate, Empfehlungen, Aufbewahrung |
+| `test_twitch_jobs.py` | Jobs ohne Konfiguration/Testmodus, Scheduler, Folgejobs, gedrosselte Fehler, Rate-Limit-Abbruch, Dashboard |
 
 ## Phase 1 – Abnahme auf dem VPS
 
@@ -87,6 +92,46 @@ sudo reboot
 curl -sI https://clips.ihre-domain.de/login | grep -iE "strict-transport|content-security|x-frame"
 nc -zv IHRE-SERVER-IP 5432 ; nc -zv IHRE-SERVER-IP 6379 ; nc -zv IHRE-SERVER-IP 8000   # von außen: alle geschlossen
 ```
+
+## Phase 2 – Abnahme auf dem VPS (Twitch-Überwachung)
+
+Voraussetzung: `TWITCH_CLIENT_ID` und `TWITCH_CLIENT_SECRET` in der `.env`, Domain mit HTTPS erreichbar.
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git pull   # bzw. Patch einspielen: git am /pfad/TwitchClip-Phase-2.patch
+docker compose up -d --build
+docker compose logs migrate | grep "0002"                 # Migration Twitch-Überwachung gelaufen
+
+# 1. Tests im Image (inkl. gemockter Twitch-API)
+docker compose --profile test run --rm --build test       # 144 passed, 1 skipped
+
+# 2. Konfiguration: EventSub aktiv?
+docker compose exec web python -m app.cli check-config | grep -E "TWITCH_EVENTSUB|TWITCH_CLIENT"
+
+# 3. Streamer anlegen (öffentlicher Kanal, z. B. ein großer deutscher Streamer)
+docker compose exec web python -m app.cli add-streamer <kanalname>
+sleep 60
+docker compose logs worker | grep -E "twitch|Job OK" | tail -20
+
+# 4. Twitch-ID, Abos, Clips prüfen
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select twitch_login, twitch_user_id, is_live, last_clip_scan_at from streamers;"
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select type, status from eventsub_subscriptions;"          # erwartet: 2 × enabled je Streamer
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select title, view_count, round(discovery_score::numeric,1), status from twitch_clips order by discovery_score desc limit 10;"
+
+# 5. Webhook von außen erreichbar? (ohne Signatur muss 403 kommen – nicht 404/502)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://clips.ihre-domain.de/webhooks/twitch/eventsub   # 403
+
+# 6. Live-Erkennung: Wenn der Kanal live geht, erscheint innerhalb von Sekunden
+#    im Aktivitätsprotokoll "… ist live (EventSub)", beim Ende "… ist offline (EventSub)".
+docker compose logs -f web | grep -i eventsub
+```
+
+Im Dashboard prüfen: *Streamer* (Profilbild, Live-Status), *Öffentliche Clips* (Bewertung, „Warum diese
+Bewertung?“, Abspielen im Twitch-Player), *System → Twitch* (Abos aktiv, Kosten, API-Kontingent).
 
 ## Lokale Entwicklung ohne Docker
 

@@ -37,6 +37,17 @@ def _localdate(value: datetime | None) -> str:
     return _localtime(value, "%d.%m.%Y")
 
 
+def _isotime(value: str | None) -> str:
+    """ISO-Zeitstempel aus Redis (Statusanzeigen) lokal formatieren."""
+    if not value:
+        return "–"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return f"{_localtime(parsed)} ({humanize_delta(parsed)})"
+
+
 def _filesize(value: int | float | None) -> str:
     if not value:
         return "0 B"
@@ -73,6 +84,7 @@ def score_tone(value: float | int | None) -> str:
 env = templates.env
 env.filters["localtime"] = _localtime
 env.filters["localdate"] = _localdate
+env.filters["isotime"] = _isotime
 env.filters["timeago"] = humanize_delta
 env.filters["filesize"] = _filesize
 env.filters["seconds"] = _seconds

@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 from redis import Redis
+from redis.exceptions import RedisError
 from rq import Queue, Retry
 from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
@@ -60,6 +62,7 @@ def enqueue_unique(
     connection: Redis | None = None,
     retry: Retry | None = None,
     timeout: int | None = None,
+    delay_seconds: float | None = None,
     **kwargs: Any,
 ) -> tuple[Job, bool]:
     """Reiht einen Job nur ein, wenn kein Job mit gleicher ID aktiv ist.
@@ -79,15 +82,35 @@ def enqueue_unique(
         existing.delete()
     except NoSuchJobError:
         pass
-    job = queue.enqueue_call(
-        func,
-        args=args,
-        kwargs=kwargs,
-        job_id=job_id,
-        retry=retry,
-        timeout=timeout,
-        result_ttl=3600,
-        failure_ttl=7 * 86400,
-    )
+    options: dict[str, Any] = {
+        "job_id": job_id,
+        "retry": retry,
+        "result_ttl": 3600,
+        "failure_ttl": 7 * 86400,
+    }
+    if delay_seconds and delay_seconds > 0:
+        # Verzögerte Jobs übernimmt der in jedem Worker laufende RQ-Scheduler (with_scheduler=True).
+        job = queue.enqueue_in(
+            timedelta(seconds=delay_seconds),
+            func,
+            args=args,
+            kwargs=kwargs,
+            job_timeout=timeout,
+            **options,
+        )
+    else:
+        job = queue.enqueue_call(func, args=args, kwargs=kwargs, timeout=timeout, **options)
     logger.info("Job eingereiht", extra={"job_id": job_id, "queue": queue_name})
     return job, True
+
+
+def safe_enqueue(
+    queue_name: str, func: Callable[..., Any] | str, *args: Any, job_id: str, **kwargs: Any
+) -> bool:
+    """Wie enqueue_unique, aber ein Redis-Ausfall bricht die aufrufende Aktion (z. B. Webhook) nicht ab."""
+    try:
+        _job, created = enqueue_unique(queue_name, func, *args, job_id=job_id, **kwargs)
+        return created
+    except RedisError:
+        logger.error("Job konnte nicht eingereiht werden (Redis)", extra={"job_id": job_id})
+        return False

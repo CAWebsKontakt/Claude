@@ -30,6 +30,7 @@ from app.web.routes import (
     streamers,
     system,
     users,
+    webhooks,
 )
 from app.web.templating import render
 
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         users,
         system,
         media,
+        webhooks,
     ):
         app.include_router(module.router)
 

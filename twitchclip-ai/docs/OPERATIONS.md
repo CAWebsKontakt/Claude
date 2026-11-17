@@ -34,7 +34,34 @@ der Streamer **automatisch** auf Modus A zurück. Abgelaufene Erlaubnisse (Gült
 Detailseite → *Streamer entfernen* → Twitch-Namen zur Bestätigung eintippen. Löscht Nachweise, Tokens, Clips und
 Highlights; das Aktivitätsprotokoll bleibt erhalten. Alternativ *Überwachung pausieren*, um Daten zu behalten.
 
-## 2. Benutzer
+## 2. Twitch-Überwachung
+
+* **Live-Erkennung:** EventSub-Webhooks melden Streamstart/-ende in Sekunden. Zusätzlich fragt der Scheduler alle
+  `TWITCH_POLL_INTERVAL_SECONDS` den Live-Status ab (falls ein Webhook verloren geht). Ohne öffentliche
+  HTTPS-Domain läuft automatisch nur das Polling.
+* **Nach dem Hinzufügen** eines Streamers werden sofort Twitch-ID, Live-Status und Clips abgefragt und die
+  EventSub-Abos angelegt. Detailseite → *Twitch jetzt abfragen* wiederholt das manuell.
+* **Öffentliche Clips:** Dashboard → *Öffentliche Clips*: Bewertung 0–100 mit Begründung („Warum diese
+  Bewertung?“), Wiedergabe im offiziellen Twitch-Player, Link zu Twitch, *Ausblenden*.
+* **Status:** Dashboard → *System* → Abschnitt *Twitch* (Abos, Kosten, letzte Abfragen, API-Kontingent, letzter Fehler).
+
+Manuell auslösen (z. B. nach Änderung der Domain):
+
+```bash
+docker compose exec worker python -c "from app.workers.jobs.twitch import sync_eventsub_job as j; print(j())"
+docker compose exec worker python -c "from app.workers.jobs.twitch import poll_live_status_job as j; print(j())"
+docker compose exec worker python -c "from app.workers.jobs.twitch import discover_clips_job as j; print(j())"
+```
+
+| Problem | Lösung |
+|---|---|
+| „Twitch-Konto … nicht gefunden“ | Login falsch geschrieben oder Konto gesperrt → Streamer entfernen und korrekt neu anlegen |
+| Abos bleiben `webhook_callback_verification_pending`/`failed` | `https://<domain>/webhooks/twitch/eventsub` muss von außen über 443 erreichbar sein; `docker compose logs web \| grep EventSub` |
+| System zeigt „nur Polling“ | `APP_BASE_URL` muss `https://` ohne Port sein, `TWITCH_EVENTSUB_SECRET` gesetzt, `TWITCH_EVENTSUB_ENABLED=true` |
+| „EventSub-Kostenlimit erreicht“ | mehr als ca. 5.000 Kanäle ohne Autorisierung – überzählige laufen per Polling |
+| „App-Token abgelehnt“ | `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` prüfen, Secret ggf. in der Twitch-Konsole neu erzeugen |
+
+## 3. Benutzer
 
 * Dashboard → *Benutzer* (nur Admins): anlegen, Rolle ändern, deaktivieren, Passwort setzen.
 * Rollen: **Administrator** (alles), **Redakteur** (Streamer, Rechte, Highlights, Freigaben), **Betrachter** (lesen).
@@ -44,7 +71,7 @@ Highlights; das Aktivitätsprotokoll bleibt erhalten. Alternativ *Überwachung p
   docker compose exec web python -m app.cli reset-password --username admin
   ```
 
-## 3. Überwachung
+## 4. Überwachung
 
 | Was | Wie |
 |---|---|
@@ -78,7 +105,7 @@ for name in ALL_QUEUES:
 PY
 ```
 
-## 4. Speicher
+## 5. Speicher
 
 * Automatisch: stündliche Bereinigung (`STORAGE_RETENTION_DAYS`, `STORAGE_MAX_GB`), Videos in offener Freigabe
   bleiben geschützt. Docker-Logs sind auf 5 × 10 MB je Container begrenzt.
@@ -90,7 +117,7 @@ PY
   docker image prune -f                                                    # alte Images
   ```
 
-## 5. Sicherung und Wiederherstellung
+## 6. Sicherung und Wiederherstellung
 
 ```bash
 bash scripts/backup.sh                                     # sofortiges Backup nach ./backups
@@ -99,7 +126,7 @@ bash scripts/restore.sh backups/twitchclip-YYYYMMDD-HHMMSS.sql.gz
 
 Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTION_KEY`) – getrennt voneinander.
 
-## 6. Schlüssel rotieren
+## 7. Schlüssel rotieren
 
 * `SECRET_KEY` ändern → alle Benutzer werden abgemeldet. `docker compose up -d`.
 * `TOKEN_ENCRYPTION_KEY` rotieren:
@@ -112,7 +139,7 @@ Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTI
   # danach in .env nur noch TOKEN_ENCRYPTION_KEY=<NEU>, erneut docker compose up -d
   ```
 
-## 7. Fehlerbehebung
+## 8. Fehlerbehebung
 
 | Symptom | Ursache / Lösung |
 |---|---|

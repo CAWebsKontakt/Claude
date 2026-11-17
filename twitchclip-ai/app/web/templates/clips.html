@@ -25,14 +25,27 @@
 <section class="tiles tiles-wide">
   {% for c in items %}
   <article class="tile">
-    <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer" class="tile-media tile-media-wide">
-      {% if c.thumbnail_url %}<img src="{{ c.thumbnail_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}<span class="tile-placeholder">Clip</span>{% endif %}
+    <div class="tile-media tile-media-wide" data-embed-target>
+      <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer" class="tile-media-link">
+        {% if c.thumbnail_url %}<img src="{{ c.thumbnail_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% else %}<span class="tile-placeholder">Clip</span>{% endif %}
+      </a>
       <span class="tile-duration">{{ c.duration | seconds }}</span>
-    </a>
+      <button type="button" class="play-button" aria-label="Clip im offiziellen Twitch-Player abspielen"
+        data-embed-src="https://clips.twitch.tv/embed?clip={{ c.twitch_clip_id | urlencode }}&amp;parent={{ embed_parent | urlencode }}&amp;autoplay=true">▶</button>
+    </div>
     <div class="tile-body">
       <div class="tile-top">{{ m.score(c.discovery_score) }} {% if c.is_featured %}{{ m.badge("Featured", "info") }}{% endif %}</div>
       <a href="{{ c.url }}" target="_blank" rel="noopener noreferrer"><strong>{{ c.title }}</strong></a>
       <p class="muted small">{{ c.streamer.name }} · {{ c.view_count }} Aufrufe · {{ c.clip_created_at | timeago }}{% if c.creator_name %} · geclippt von {{ c.creator_name }}{% endif %}</p>
+      {% if c.score_breakdown %}
+      <details class="score-details">
+        <summary class="small">Warum diese Bewertung?</summary>
+        <dl class="kv kv-compact">
+          {% set labels = {"tempo": "Tempo (Aufrufe/Std.)", "beliebtheit": "Beliebtheit", "aktualitaet": "Aktualität", "haeufung": "Mehrfach geclippt", "laenge": "Passende Länge", "featured": "Featured", "aufrufe_pro_stunde": "Aufrufe pro Stunde", "aehnliche_clips": "Clips vom selben Moment"} %}
+          {% for key, value in c.score_breakdown.items() %}<dt>{{ labels.get(key, key) }}</dt><dd>{{ value }}</dd>{% endfor %}
+        </dl>
+      </details>
+      {% endif %}
       {% if current_user.can_edit and c.status != "dismissed" %}
       <form method="post" action="/clips/{{ c.id }}/dismiss">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Ausblenden</button></form>
       {% endif %}
@@ -42,6 +55,6 @@
 </section>
 {{ m.pager(page, has_next, "streamer_id=" ~ (filters.streamer_id or "") ~ "&show_dismissed=" ~ (filters.show_dismissed or 0)) }}
 {% else %}
-<section class="card">{{ m.empty("Noch keine Clips vorhanden.", "Die automatische Clip-Suche über Twitch Helix folgt in Phase 2.") }}</section>
+<section class="card">{{ m.empty("Noch keine Clips vorhanden.", "Die Clip-Suche läuft automatisch alle " ~ settings.clip_discovery_interval_minutes ~ " Minuten für alle aktiven Streamer." if settings.twitch_configured else "Die Clip-Suche startet, sobald TWITCH_CLIENT_ID und TWITCH_CLIENT_SECRET gesetzt sind.") }}</section>
 {% endif %}
 {% endblock %}

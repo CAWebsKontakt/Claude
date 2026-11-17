@@ -27,6 +27,24 @@
   {% endif %}
 </section>
 
+<section class="card">
+  <h2>Twitch</h2>
+  {% if not settings.twitch_configured %}
+    {{ m.empty("Twitch-API nicht konfiguriert.", "TWITCH_CLIENT_ID und TWITCH_CLIENT_SECRET in der .env setzen (siehe docs/API_REGISTRATION.md).") }}
+  {% else %}
+  <dl class="kv">
+    <dt>Live-Erkennung</dt><dd>{{ "EventSub-Webhooks + Polling" if settings.eventsub_webhooks_active else "nur Polling (EventSub inaktiv: HTTPS-Domain/Secret/TWITCH_EVENTSUB_ENABLED prüfen)" }}</dd>
+    <dt>Webhook-Adresse</dt><dd><code>{{ settings.eventsub_callback_url }}</code></dd>
+    <dt>EventSub-Abos</dt><dd>{{ eventsub_count }} aktiv{% if twitch.eventsub_max_total_cost %} · Kosten {{ twitch.eventsub_total_cost }}/{{ twitch.eventsub_max_total_cost }}{% endif %}</dd>
+    <dt>Letzter EventSub-Abgleich</dt><dd>{{ twitch.last_eventsub_sync_at | isotime }}</dd>
+    <dt>Letzte Live-Abfrage</dt><dd>{{ twitch.last_poll_at | isotime }}{% if twitch.last_poll_checked %} · {{ twitch.last_poll_live }} von {{ twitch.last_poll_checked }} live{% endif %}</dd>
+    <dt>Letzte Clip-Suche</dt><dd>{{ twitch.last_clip_scan_at | isotime }}</dd>
+    <dt>API-Kontingent</dt><dd>{% if ratelimit %}{{ ratelimit.remaining | int }} von {{ ratelimit.limit | int }} Punkten frei{% else %}–{% endif %}</dd>
+    {% if twitch.last_error %}<dt>Letzter Fehler</dt><dd class="text-bad wrap">{{ twitch.last_error }} ({{ twitch.last_error_at | isotime }})</dd>{% endif %}
+  </dl>
+  {% endif %}
+</section>
+
 <div class="grid-2">
   <section class="card">
     <h2>Warteschlangen</h2>

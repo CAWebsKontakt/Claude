@@ -72,6 +72,17 @@ class Settings(BaseSettings):
     twitch_client_id: str = ""
     twitch_client_secret: SecretStr = Field(default=SecretStr(""))
     twitch_eventsub_secret: SecretStr = Field(default=SecretStr(""))
+    # EventSub-Webhooks (benötigen HTTPS auf Port 443). false = nur Polling.
+    twitch_eventsub_enabled: bool = True
+    # Rückfallebene/Abgleich des Live-Status per Get Streams
+    twitch_poll_interval_seconds: int = Field(default=180, ge=60, le=3600)
+    # Suche nach öffentlichen Clips
+    clip_discovery_interval_minutes: int = Field(default=30, ge=5, le=1440)
+    clip_discovery_lookback_hours: int = Field(default=48, ge=1, le=24 * 30)
+    clip_retention_days: int = Field(default=30, ge=1, le=365)
+    # Für Tests/Mocks überschreibbar
+    twitch_api_base: str = "https://api.twitch.tv/helix"
+    twitch_auth_base: str = "https://id.twitch.tv/oauth2"
 
     # --- TikTok ----------------------------------------------------------
     tiktok_client_key: str = ""
@@ -123,6 +134,14 @@ class Settings(BaseSettings):
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise ValueError("APP_BASE_URL muss eine absolute http(s)-URL sein")
         return value.rstrip("/")
+
+    @field_validator("twitch_eventsub_secret")
+    @classmethod
+    def _validate_eventsub_secret(cls, value: SecretStr) -> SecretStr:
+        raw = value.get_secret_value()
+        if raw and not (10 <= len(raw) <= 100):
+            raise ValueError("TWITCH_EVENTSUB_SECRET muss 10–100 Zeichen lang sein (Vorgabe von Twitch)")
+        return value
 
     @field_validator("log_level")
     @classmethod
@@ -186,6 +205,19 @@ class Settings(BaseSettings):
         return bool(self.twitch_client_id and self.twitch_client_secret.get_secret_value())
 
     @property
+    def eventsub_webhooks_active(self) -> bool:
+        """EventSub-Webhooks nur mit öffentlicher HTTPS-Adresse (Port 443) und gesetztem Secret."""
+        host = self.public_host
+        return (
+            self.twitch_eventsub_enabled
+            and self.twitch_configured
+            and bool(self.twitch_eventsub_secret.get_secret_value())
+            and self.app_base_url.startswith("https://")
+            and host not in ("localhost", "127.0.0.1", "testserver")
+            and ":" not in self.app_base_url.split("//", 1)[1].split("/", 1)[0]
+        )
+
+    @property
     def tiktok_configured(self) -> bool:
         return bool(self.tiktok_client_key and self.tiktok_client_secret.get_secret_value())
 
@@ -234,6 +266,11 @@ class Settings(BaseSettings):
             "TWITCH_CLIENT_SECRET": "gesetzt"
             if self.twitch_client_secret.get_secret_value()
             else "nicht gesetzt",
+            "TWITCH_EVENTSUB": "Webhooks aktiv" if self.eventsub_webhooks_active else "aus (nur Polling)",
+            "TWITCH_POLL_INTERVAL_SECONDS": self.twitch_poll_interval_seconds,
+            "CLIP_DISCOVERY_INTERVAL_MINUTES": self.clip_discovery_interval_minutes,
+            "CLIP_DISCOVERY_LOOKBACK_HOURS": self.clip_discovery_lookback_hours,
+            "CLIP_RETENTION_DAYS": self.clip_retention_days,
             "TIKTOK_CLIENT_KEY": "gesetzt" if self.tiktok_client_key else "nicht gesetzt",
             "TIKTOK_DIRECT_POST_ENABLED": self.tiktok_direct_post_enabled,
             "WHISPER_MODEL": self.whisper_model,

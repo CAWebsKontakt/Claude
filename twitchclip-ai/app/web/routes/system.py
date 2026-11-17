@@ -5,13 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from redis.exceptions import RedisError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import User
+from app.integrations.twitch.ratelimit import RateLimiter
+from app.models import EventSubSubscription, User
 from app.redis_client import get_redis
 from app.services.system import collect_status
+from app.services.twitch_monitor import read_status
 from app.web.deps import csrf_protect, require_admin, require_user
 from app.web.flash import flash
 from app.web.templating import render
@@ -27,11 +30,22 @@ def system(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    status = collect_status(settings, db, get_redis(), detailed=True)
+    redis = get_redis()
+    status = collect_status(settings, db, redis, detailed=True)
+    eventsub_count = db.scalar(
+        select(func.count(EventSubSubscription.id)).where(EventSubSubscription.status == "enabled")
+    )
     return render(
         request,
         "system.html",
-        {"status": status, "config": settings.public_summary(), "nav": "system"},
+        {
+            "status": status,
+            "config": settings.public_summary(),
+            "twitch": read_status(redis),
+            "ratelimit": RateLimiter(redis, "app").state(),
+            "eventsub_count": eventsub_count or 0,
+            "nav": "system",
+        },
     )
 
 

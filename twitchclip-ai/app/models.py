@@ -101,6 +101,8 @@ class Streamer(TimestampMixin, Base):
     live_started_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     live_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Letzte erfolgreiche Suche nach öffentlichen Clips
+    last_clip_scan_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     added_by_user_id: Mapped[int | None] = mapped_column(
@@ -239,6 +241,7 @@ class EventSubSubscription(TimestampMixin, Base):
 
 class StreamSession(TimestampMixin, Base):
     __tablename__ = "stream_sessions"
+    __table_args__ = (Index("ix_stream_sessions_status", "status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     streamer_id: Mapped[int] = mapped_column(
@@ -260,7 +263,10 @@ class TwitchClip(Base):
     """Öffentliche Clips (Modus A). Es werden nur Metadaten gespeichert, keine Videodateien."""
 
     __tablename__ = "twitch_clips"
-    __table_args__ = (Index("ix_twitch_clips_streamer_score", "streamer_id", "discovery_score"),)
+    __table_args__ = (
+        Index("ix_twitch_clips_streamer_score", "streamer_id", "discovery_score"),
+        Index("ix_twitch_clips_clip_created_at", "clip_created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     streamer_id: Mapped[int] = mapped_column(
@@ -281,6 +287,7 @@ class TwitchClip(Base):
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     clip_created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     discovery_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    score_breakdown: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default=ClipStatus.NEW.value, nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), default=utcnow, server_default=func.now(), nullable=False

@@ -65,6 +65,16 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 
 Dashboard öffnen: `https://clips.ihre-domain.de` → anmelden.
 
+### Twitch aktivieren (ab Phase 2)
+
+Twitch-App registrieren (siehe `API_REGISTRATION.md`), dann in der `.env` setzen und neu starten:
+
+```bash
+nano .env      # TWITCH_CLIENT_ID=…  TWITCH_CLIENT_SECRET=…
+docker compose up -d
+docker compose logs -f worker | grep -i twitch     # erste Abfragen beobachten
+```
+
 ## 4. Regelmäßige Aufgaben (Cron als Benutzer `twitchclip`)
 
 ```bash

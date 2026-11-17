@@ -53,11 +53,35 @@
       <dt>Titel / Spiel</dt><dd class="wrap">{{ streamer.live_title or "–" }} · {{ streamer.live_game_name or "–" }}</dd>
       {% endif %}
       <dt>Zuletzt geprüft</dt><dd>{{ streamer.live_checked_at | timeago }}</dd>
+      <dt>Live-Erkennung</dt>
+      <dd>
+        {% if not twitch_available %}Twitch-API nicht konfiguriert
+        {% elif eventsub_active %}EventSub ({{ subscriptions | selectattr("status", "equalto", "enabled") | list | length }}/2 Abos aktiv) + Polling
+        {% else %}nur Polling (EventSub benötigt eine öffentliche HTTPS-Domain){% endif %}
+      </dd>
+      <dt>Clip-Suche</dt><dd>{{ streamer.last_clip_scan_at | timeago }}</dd>
       <dt>Hinzugefügt</dt><dd>{{ streamer.created_at | localtime }}</dd>
       {% if streamer.last_error %}<dt>Letzter Fehler</dt><dd class="text-bad wrap">{{ streamer.last_error }}</dd>{% endif %}
     </dl>
+    {% if subscriptions %}
+    <details class="disclosure">
+      <summary>EventSub-Abos ({{ subscriptions | length }})</summary>
+      <ul class="list">
+        {% for sub in subscriptions %}
+        <li class="list-row"><span class="list-main"><strong>{{ sub.type }}</strong><span class="muted small">seit {{ sub.created_at | localtime }}</span></span>
+          <span class="list-side">{{ m.badge(sub.status, "good" if sub.status == "enabled" else "warn") }}</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
     {% if current_user.can_edit %}
     <div class="button-row">
+      {% if twitch_available %}
+      <form method="post" action="/streamers/{{ streamer.id }}/refresh">
+        {{ m.csrf() }}
+        <button class="btn btn-ghost" type="submit">Twitch jetzt abfragen</button>
+      </form>
+      {% endif %}
       <form method="post" action="/streamers/{{ streamer.id }}/active">
         {{ m.csrf() }}
         <input type="hidden" name="active" value="{{ '0' if streamer.is_active else '1' }}">
@@ -185,7 +209,7 @@
       </li>
       {% endfor %}
     </ul>
-    {% else %}{{ m.empty("Noch keine Clips abgerufen.", "Ab Phase 2 werden öffentliche Clips über die Twitch-API gesammelt.") }}{% endif %}
+    {% else %}{{ m.empty("Noch keine Clips gefunden.", "Öffentliche Clips der letzten " ~ settings.clip_discovery_lookback_hours ~ " Stunden werden alle " ~ settings.clip_discovery_interval_minutes ~ " Minuten abgefragt." if twitch_available else "Die Clip-Suche startet, sobald die Twitch-API konfiguriert ist.") }}{% endif %}
   </section>
 </div>
 

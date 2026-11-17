@@ -189,6 +189,16 @@ Werden in Phase 6 im Freigabeformular umgesetzt:
   Einschränkungen“; die Freigabe erfolgt bewusst manuell.
 * TikToks „Music Usage Confirmation“ ist eine Erklärung des Nutzers, keine Lizenz.
 
+## Umsetzung Phase 2 (Twitch-Überwachung)
+
+* `app/integrations/twitch/client.py` – Helix-Client (Get Users, Get Channel Information, Get Streams, Get Clips,
+  Get Videos, EventSub-Verwaltung), Batch 100, Cursor-Paginierung.
+* `app/integrations/twitch/ratelimit.py` – gemeinsames Kontingent in Redis, Wartezeit bis `Ratelimit-Reset`.
+* `app/integrations/twitch/auth.py` – App-Token (Client Credentials), verschlüsselt in Redis, Erneuerung bei 401.
+* `app/integrations/twitch/eventsub.py` + `app/web/routes/webhooks.py` – HMAC-Prüfung, max. 10 min Alter,
+  Duplikatschutz über Message-ID (Redis, 20 min), Challenge-Antwort als `text/plain`, Widerrufe.
+* `app/services/clip_discovery.py` – Get Clips in 12-h-Fenstern über `CLIP_DISCOVERY_LOOKBACK_HOURS`.
+
 ## Teil 3 – Was daraus für das System folgt
 
 | Einschränkung | Umsetzung |
