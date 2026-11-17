@@ -18,6 +18,7 @@ from app.integrations.twitch.client import parse_twitch_time
 from app.integrations.twitch.eventsub import TYPE_NOTIFICATION, TYPE_REVOCATION, EventSubMessage
 from app.models import Streamer
 from app.services.activity import log_activity
+from app.services.twitch_authorization import revoke_by_twitch_user
 from app.services.twitch_monitor import apply_stream_offline, apply_stream_online, mark_subscription_status
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,11 @@ def handle_message(db: Session, message: EventSubMessage) -> FollowUps:
 
 def _handle_notification(db: Session, message: EventSubMessage, follow: FollowUps) -> None:
     event = message.event
+    if message.subscription_type == "user.authorization.revoke":
+        user_id = str(event.get("user_id") or "")
+        if user_id:
+            revoke_by_twitch_user(db, user_id, "Zugriff bei Twitch widerrufen (EventSub)")
+        return
     broadcaster_id = str(event.get("broadcaster_user_id") or "")
     streamer = db.scalar(select(Streamer).where(Streamer.twitch_user_id == broadcaster_id))
     if streamer is None or not streamer.is_active:

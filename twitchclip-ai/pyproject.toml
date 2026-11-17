@@ -1,6 +1,6 @@
 [project]
 name = "twitchclip-ai"
-version = "0.2.0"
+version = "0.3.0"
 description = "TwitchClip AI – rechtekonforme Twitch-Highlight-Erkennung und TikTok-Veröffentlichung"
 requires-python = ">=3.12"
 

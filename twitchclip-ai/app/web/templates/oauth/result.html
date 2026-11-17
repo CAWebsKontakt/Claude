@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ "Zugriff erteilt" if ok else "Nicht abgeschlossen" }}{% endblock %}
+{% block public %}
+<section class="card login-card">
+  <h1 class="brand brand-lg">TwitchClip <span>AI</span></h1>
+  {% if ok %}
+    <h2>Vielen Dank – der Zugriff ist eingerichtet</h2>
+    <dl class="kv">
+      <dt>Kanal</dt><dd>{{ result.streamer_name }}</dd>
+      <dt>Angemeldet als</dt><dd>{{ result.login }} ({{ "Kanalinhaber" if result.role == "broadcaster" else "Editor" }})</dd>
+      <dt>Chat-Statistik</dt><dd>{{ "erlaubt (nur Zählwerte)" if result.chat_enabled else "nicht erlaubt" }}</dd>
+    </dl>
+    <p class="muted small">Sie können dieses Fenster schließen. Widerruf jederzeit unter Twitch → Einstellungen → Verbindungen.</p>
+  {% else %}
+    <h2>Autorisierung nicht abgeschlossen</h2>
+    <div class="flash flash-error" role="alert">{{ message }}</div>
+    <p class="muted small">Bitte wenden Sie sich an die Person, die Ihnen den Link geschickt hat.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block content %}{{ self.public() }}{% endblock %}

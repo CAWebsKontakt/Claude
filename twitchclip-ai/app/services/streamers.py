@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.enums import (
     ActivityCategory,
     ActivityLevel,
@@ -137,14 +138,18 @@ def active_permission(streamer: Streamer, moment: datetime | None = None) -> Str
 
 
 def active_twitch_token(streamer: Streamer) -> OAuthToken | None:
-    for token in streamer.oauth_tokens:
-        if (
-            token.provider == OAuthProvider.TWITCH.value
-            and token.revoked_at is None
-            and token.has_any_scope(TWITCH_CLIP_SCOPES)
-        ):
-            return token
-    return None
+    """Gültiges Twitch-Token mit Clip-Berechtigung; das des Kanalinhabers wird bevorzugt."""
+    candidates = [
+        token
+        for token in streamer.oauth_tokens
+        if token.provider == OAuthProvider.TWITCH.value
+        and token.revoked_at is None
+        and token.has_any_scope(TWITCH_CLIP_SCOPES)
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: (t.role == "broadcaster", t.created_at), reverse=True)
+    return candidates[0]
 
 
 @dataclass
@@ -166,6 +171,22 @@ def compute_rights(streamer: Streamer, moment: datetime | None = None) -> Rights
     unmittelbar vor der Ausführung erneut.
     """
     moment = moment or utcnow()
+    if streamer.is_demo:
+        if get_settings().test_mode:
+            return RightsInfo(
+                status=RightsStatus.READY_PUBLISHING,
+                label="Testmodus – eigene Beispieldateien",
+                tone="good",
+                can_process=True,
+                can_publish=True,
+                reasons=["Demo-Kanal: verarbeitet nur Dateien aus /data/samples, keine Twitch-Inhalte."],
+            )
+        return RightsInfo(
+            status=RightsStatus.PUBLIC_ONLY,
+            label="Demo-Kanal (Testmodus aus)",
+            tone="neutral",
+            reasons=["Der Demo-Kanal wird nur bei TEST_MODE=true verarbeitet."],
+        )
     if streamer.mode != StreamerMode.AUTHORIZED:
         return RightsInfo(
             status=RightsStatus.PUBLIC_ONLY,
@@ -218,6 +239,25 @@ def compute_rights(streamer: Streamer, moment: datetime | None = None) -> Rights
         permission=permission,
         token=token,
     )
+
+
+class RightsError(PermissionError):
+    """Verarbeitung ist für diesen Streamer (derzeit) nicht erlaubt."""
+
+
+def ensure_can_process(streamer: Streamer) -> RightsInfo:
+    """Harte Prüfung unmittelbar vor jedem Download-/Analyse-/Schnitt-Schritt."""
+    rights = compute_rights(streamer)
+    if not rights.can_process:
+        raise RightsError(f"{rights.label}: " + " ".join(rights.reasons))
+    return rights
+
+
+def ensure_can_publish(streamer: Streamer) -> RightsInfo:
+    rights = compute_rights(streamer)
+    if not rights.can_publish:
+        raise RightsError(f"{rights.label}: Veröffentlichung nicht erlaubt. " + " ".join(rights.reasons))
+    return rights
 
 
 def set_mode(db: Session, streamer: Streamer, mode: StreamerMode | str, *, actor: User) -> None:

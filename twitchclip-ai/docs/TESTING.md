@@ -2,7 +2,7 @@
 
 ## Automatisierte Tests
 
-Die Suite (145 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+Die Suite (179 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
 (Twitch, ab Phase 6 TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
@@ -38,6 +38,8 @@ docker compose --profile test run --rm --build test
 | `test_twitch_monitor.py` | IDs auflösen, Umbenennung, Live-Lebenszyklus, Karenzzeit, VOD-Zuordnung, EventSub-Abgleich, Kostenlimit |
 | `test_clip_discovery.py` | Zeitfenster, Bewertung (relativ, Häufung, Länge), Upsert ohne Duplikate, Empfehlungen, Aufbewahrung |
 | `test_twitch_jobs.py` | Jobs ohne Konfiguration/Testmodus, Scheduler, Folgejobs, gedrosselte Fehler, Rate-Limit-Abbruch, Dashboard |
+| `test_twitch_authorization.py` | Einladungslink (Signatur, Ablauf, einmalig), kompletter OAuth-Ablauf über HTTP, Editor-Rolle, fehlende Scopes, Token-Erneuerung/-Sperre, stündliche Validierung, EventSub-Widerruf, Trennen im Dashboard |
+| `test_clip_processing.py` | Zeitangaben, Kandidatenauswahl ohne Überlappung, Rechteprüfung vor jedem Schritt, Clip aus VOD (Parameter), Download ohne Token zum CDN, SHA-256-Duplikate, Größenlimit, Wiederholungen, 403 bei Editor, Testmodus mit echten FFmpeg-Beispielvideos, Neustart nach Re-Autorisierung |
 
 ## Phase 1 – Abnahme auf dem VPS
 
@@ -104,7 +106,7 @@ docker compose up -d --build
 docker compose logs migrate | grep "0002"                 # Migration Twitch-Überwachung gelaufen
 
 # 1. Tests im Image (inkl. gemockter Twitch-API)
-docker compose --profile test run --rm --build test       # 144 passed, 1 skipped
+docker compose --profile test run --rm --build test       # alle Tests bestanden
 
 # 2. Konfiguration: EventSub aktiv?
 docker compose exec web python -m app.cli check-config | grep -E "TWITCH_EVENTSUB|TWITCH_CLIENT"
@@ -132,6 +134,51 @@ docker compose logs -f web | grep -i eventsub
 
 Im Dashboard prüfen: *Streamer* (Profilbild, Live-Status), *Öffentliche Clips* (Bewertung, „Warum diese
 Bewertung?“, Abspielen im Twitch-Player), *System → Twitch* (Abos aktiv, Kosten, API-Kontingent).
+
+## Phase 3 – Abnahme auf dem VPS (Autorisierung & Clip-Verarbeitung)
+
+Voraussetzung: Phase 2 läuft, ein Streamer hat zugestimmt, an dieser Abnahme teilzunehmen (oder Sie testen mit
+Ihrem **eigenen** Twitch-Kanal – dann sind Sie selbst der Kanalinhaber).
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git am /pfad/TwitchClip-Phase-3.patch && docker compose up -d --build
+docker compose logs migrate | grep 0003                     # Migration Autorisierung & Clips
+docker compose --profile test run --rm --build test         # alle Tests bestanden
+```
+
+Im Dashboard (eigener Kanal oder Kanal mit schriftlicher Erlaubnis):
+
+1. Streamer → *Neue Erlaubnis dokumentieren* (inkl. Veröffentlichung) → Modus B.
+2. *Autorisierungslink erstellen* → Link im privaten Browserfenster öffnen → bei Twitch zustimmen →
+   „Vielen Dank – der Zugriff ist eingerichtet“. Detailseite: Status „Verarbeitung & Veröffentlichung erlaubt“.
+3. Nach dem nächsten Stream (oder sofort für einen vorhandenen Stream):
+
+```bash
+# VOD des letzten Streams zuordnen und Kandidaten planen (statt auf die Zeitsteuerung zu warten)
+SID=$(docker compose exec -T postgres psql -U twitchclip -d twitchclip -tAc "select id from stream_sessions order by id desc limit 1")
+docker compose exec worker python -c "from app.workers.jobs.twitch import attach_vod_job as j; print(j($SID))"
+docker compose exec worker python -c "from app.workers.jobs.clips import plan_stream_clips_job as j; print(j($SID, True))"
+sleep 30
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select id, source, twitch_clip_id, status, file_size, error from clip_requests order by id desc limit 10;"
+docker compose exec worker-media sh -c 'ls -lh /data/downloads/*/'
+```
+
+4. Manuell: Detailseite → Stream → Startzeit `0:10:00`, Länge `30` → *Clip erstellen*. Nach ca. 1 Minute steht
+   der Auftrag auf „Bereit für Analyse“; *Ansehen* spielt die Datei ab. Der Clip erscheint auch im Clip-Manager
+   des Kanals.
+5. *Trennen* → Status „Twitch-Autorisierung fehlt“; neue Aufträge werden abgelehnt.
+
+Testmodus (ohne Twitch, ohne fremde Rechte):
+
+```bash
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli make-samples --count 2 --duration 30
+docker compose exec worker python -m app.cli ingest-samples      # "2 Beispieldatei(en) übernommen"
+# Dashboard → Streamer → "Testmodus (Beispieldateien)" → Clip-Aufträge "Bereit für Analyse"
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d   # wieder Normalbetrieb
+```
 
 ## Lokale Entwicklung ohne Docker
 

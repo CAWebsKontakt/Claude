@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.enums import PROTECTED_PUBLISH_STATUSES
-from app.models import PublishJob, RenderedVideo
+from app.models import ClipRequest, PublishJob, RenderedVideo
 from app.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,15 @@ def _mark_purged_videos(db: Session, deleted: set[str], now: datetime, report: C
             report.purged_videos += 1
 
 
+def _mark_purged_clip_requests(db: Session, deleted: set[str]) -> None:
+    if not deleted:
+        return
+    for row in db.scalars(select(ClipRequest).where(ClipRequest.file_path.is_not(None))).all():
+        if str(Path(row.file_path).resolve()) in deleted:
+            row.file_path = None
+            row.error = "Quelldatei nach Ablauf der Aufbewahrungsfrist gelöscht"
+
+
 def cleanup_storage(
     settings: Settings, db: Session, *, now: datetime | None = None, dry_run: bool = False
 ) -> CleanupReport:
@@ -208,7 +217,9 @@ def cleanup_storage(
             )
 
     if not dry_run:
-        _mark_purged_videos(db, {str(Path(p).resolve()) for p in report.deleted_paths}, now, report)
+        deleted_set = {str(Path(p).resolve()) for p in report.deleted_paths}
+        _mark_purged_videos(db, deleted_set, now, report)
+        _mark_purged_clip_requests(db, deleted_set)
         _remove_empty_dirs(settings.tmp_dir, tmp_cutoff)
         _remove_empty_dirs(settings.downloads_dir, tmp_cutoff)
     return report

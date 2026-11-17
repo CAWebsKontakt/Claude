@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     # Für Tests/Mocks überschreibbar
     twitch_api_base: str = "https://api.twitch.tv/helix"
     twitch_auth_base: str = "https://id.twitch.tv/oauth2"
+    # Pfade der (neueren) Clip-Endpunkte – bei Abweichung zur offiziellen Referenz hier anpassbar
+    twitch_vod_clip_path: str = "/videos/clips"
+    twitch_clip_download_path: str = "/clips/downloads"
+    # Gültigkeit von Autorisierungslinks für Streamer/Editoren
+    twitch_invite_valid_days: int = Field(default=7, ge=1, le=60)
+    # Höchstzahl automatisch geplanter Clip-Kandidaten je Stream (begrenzt auch neue Clips im Kanal)
+    clip_candidates_per_stream: int = Field(default=8, ge=1, le=30)
+    # Größte erlaubte Download-Datei in MB
+    clip_download_max_mb: int = Field(default=500, ge=10, le=4000)
 
     # --- TikTok ----------------------------------------------------------
     tiktok_client_key: str = ""
@@ -271,6 +280,9 @@ class Settings(BaseSettings):
             "CLIP_DISCOVERY_INTERVAL_MINUTES": self.clip_discovery_interval_minutes,
             "CLIP_DISCOVERY_LOOKBACK_HOURS": self.clip_discovery_lookback_hours,
             "CLIP_RETENTION_DAYS": self.clip_retention_days,
+            "CLIP_CANDIDATES_PER_STREAM": self.clip_candidates_per_stream,
+            "TWITCH_VOD_CLIP_PATH": self.twitch_vod_clip_path,
+            "TWITCH_CLIP_DOWNLOAD_PATH": self.twitch_clip_download_path,
             "TIKTOK_CLIENT_KEY": "gesetzt" if self.tiktok_client_key else "nicht gesetzt",
             "TIKTOK_DIRECT_POST_ENABLED": self.tiktok_direct_post_enabled,
             "WHISPER_MODEL": self.whisper_model,

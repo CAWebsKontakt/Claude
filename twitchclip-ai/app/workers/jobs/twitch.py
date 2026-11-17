@@ -21,6 +21,8 @@ from app.models import Streamer, StreamSession
 from app.redis_client import get_redis
 from app.services.activity import log_activity, log_activity_throttled
 from app.services.clip_discovery import discover_clips_for_streamer, prune_old_clips
+from app.services.streamers import compute_rights
+from app.services.twitch_authorization import validate_all_tokens
 from app.services.twitch_monitor import (
     attach_vod,
     poll_live_status,
@@ -264,7 +266,16 @@ def attach_vod_job(session_id: int, attempt: int = 1) -> dict:
         vod_id = attach_vod(db, client, session)
         streamer = db.get(Streamer, session.streamer_id)
         if vod_id:
-            return {"vod_id": vod_id}
+            planned = False
+            if (
+                streamer is not None
+                and streamer.mode == StreamerMode.AUTHORIZED
+                and compute_rights(streamer).can_process
+            ):
+                from app.workers.jobs.clips import schedule_plan
+
+                planned = schedule_plan(session_id)
+            return {"vod_id": vod_id, "plan_scheduled": planned}
         if attempt < VOD_LOOKUP_ATTEMPTS:
             safe_enqueue(
                 QUEUE_DEFAULT,
@@ -313,3 +324,18 @@ def refresh_streamer_job(streamer_id: int) -> dict:
 def prune_twitch_clips_job() -> int:
     with session_scope() as db:
         return prune_old_clips(db, get_settings().clip_retention_days)
+
+
+def validate_twitch_tokens_job() -> dict:
+    """Stündlich: alle Nutzer-Tokens bei Twitch validieren (Vorgabe von Twitch), ggf. erneuern/sperren."""
+    if not twitch_available():
+        return _skip("validate")
+    settings = get_settings()
+    try:
+        with _client() as client, session_scope() as db:
+            report = validate_all_tokens(db, settings, client.http)
+    except TwitchError as exc:
+        _report_error("Token-Validierung", exc)
+        return {"error": str(exc)}
+    record_status(get_redis(), last_token_validation_at=utcnow().isoformat())
+    return report.__dict__

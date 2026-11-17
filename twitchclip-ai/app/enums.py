@@ -170,3 +170,52 @@ PROTECTED_PUBLISH_STATUSES = (
     PublishStatus.UPLOADING,
     PublishStatus.PROCESSING,
 )
+
+
+class TwitchAuthRole(StrEnum):
+    BROADCASTER = "broadcaster"
+    EDITOR = "editor"
+
+
+class ClipRequestSource(StrEnum):
+    VIEWER_CLIP = "viewer_clip"  # vorhandener Zuschauer-Clip des Streams
+    VOD_WINDOW = "vod_window"  # neuer Clip aus dem VOD (Signale, ab Phase 4)
+    MANUAL = "manual"  # im Dashboard angefordert
+    SAMPLE = "sample"  # Beispieldatei im Testmodus
+
+
+CLIP_SOURCE_LABELS = {
+    ClipRequestSource.VIEWER_CLIP: "Zuschauer-Clip",
+    ClipRequestSource.VOD_WINDOW: "Aus VOD (automatisch)",
+    ClipRequestSource.MANUAL: "Aus VOD (manuell)",
+    ClipRequestSource.SAMPLE: "Beispieldatei",
+}
+
+
+class ClipRequestStatus(StrEnum):
+    PLANNED = "planned"
+    CREATING = "creating"
+    WAITING = "waiting"  # Clip erstellt, Twitch verarbeitet noch
+    DOWNLOADING = "downloading"
+    DOWNLOADED = "downloaded"
+    SKIPPED = "skipped"  # Rechte fehlen o. Ä.
+    DUPLICATE = "duplicate"
+    FAILED = "failed"
+
+
+CLIP_STATUS_LABELS = {
+    ClipRequestStatus.PLANNED: "Geplant",
+    ClipRequestStatus.CREATING: "Wird erstellt",
+    ClipRequestStatus.WAITING: "Twitch verarbeitet",
+    ClipRequestStatus.DOWNLOADING: "Wird geladen",
+    ClipRequestStatus.DOWNLOADED: "Bereit für Analyse",
+    ClipRequestStatus.SKIPPED: "Übersprungen",
+    ClipRequestStatus.DUPLICATE: "Duplikat",
+    ClipRequestStatus.FAILED: "Fehlgeschlagen",
+}
+ACTIVE_CLIP_STATUSES = (
+    ClipRequestStatus.PLANNED,
+    ClipRequestStatus.CREATING,
+    ClipRequestStatus.WAITING,
+    ClipRequestStatus.DOWNLOADING,
+)

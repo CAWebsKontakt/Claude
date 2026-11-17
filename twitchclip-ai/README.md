@@ -44,7 +44,7 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 |---|---|---|
 | 1 | Server, Docker, Datenbank, Dashboard, Benutzer, Rechte-Dokumentation, Speicherbereinigung | ✅ fertig |
 | 2 | Twitch-API, EventSub, Live-Status, öffentliche Clip-Suche und -Bewertung | ✅ fertig |
-| 3 | Twitch-OAuth für Streamer/Editoren, Clip aus VOD, Clip-Download, Idempotenz | geplant |
+| 3 | Twitch-OAuth für Streamer/Editoren, Clip aus VOD, Clip-Download, Idempotenz, Testmodus-Beispieldateien | ✅ fertig |
 | 4 | KI-Highlight-Erkennung (Whisper, Audio, OpenCV, Chat, Duplikate, Score 0–100) | geplant |
 | 5 | Vertikaler Schnitt, Facecam-Layout, Untertitel, Titel/Beschreibung/Hashtags | geplant |
 | 6 | TikTok-OAuth, Creator-Info, Freigabe nach UX-Richtlinien, Upload, Status | geplant |

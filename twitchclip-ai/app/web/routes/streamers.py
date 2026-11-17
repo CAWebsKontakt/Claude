@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
@@ -14,19 +15,26 @@ from app.db import get_db
 from app.enums import GrantorRole, StreamerMode
 from app.models import (
     ActivityLog,
+    ClipRequest,
     EventSubSubscription,
     Highlight,
+    OAuthToken,
     Streamer,
     StreamerPermission,
+    StreamSession,
     TwitchClip,
     User,
 )
 from app.services import streamers as streamer_service
+from app.services.clip_processing import ClipRequestError, parse_timecode, request_vod_clip, reset_for_retry
 from app.services.permissions import PermissionError_, PermissionInput, add_permission, revoke_permission
 from app.services.streamers import StreamerError, compute_rights
+from app.services.twitch_authorization import AuthorizationError, create_invite, disconnect
+from app.timeutil import utcnow
 from app.web.deps import csrf_protect, require_editor, require_user
 from app.web.flash import flash
 from app.web.templating import render
+from app.workers.jobs.clips import schedule_create, schedule_download, schedule_plan
 from app.workers.jobs.twitch import schedule_eventsub_sync, schedule_streamer_refresh, twitch_available
 
 router = APIRouter(prefix="/streamers")
@@ -131,6 +139,25 @@ def streamer_detail(
         .where(EventSubSubscription.streamer_id == streamer.id)
         .order_by(EventSubSubscription.type)
     ).all()
+    sessions = db.scalars(
+        select(StreamSession)
+        .where(StreamSession.streamer_id == streamer.id)
+        .order_by(StreamSession.started_at.desc())
+        .limit(10)
+    ).all()
+    clip_requests = db.scalars(
+        select(ClipRequest)
+        .where(ClipRequest.streamer_id == streamer.id)
+        .order_by(ClipRequest.created_at.desc())
+        .limit(25)
+    ).all()
+    twitch_tokens = sorted(
+        (t for t in streamer.oauth_tokens if t.provider == "twitch"),
+        key=lambda t: (t.revoked_at is None, t.created_at),
+        reverse=True,
+    )
+    invite = request.session.pop("twitch_invite", None)
+    invite_url = invite["url"] if invite and invite.get("streamer_id") == streamer.id else None
     return render(
         request,
         "streamers/detail.html",
@@ -143,6 +170,10 @@ def streamer_detail(
             "grantor_roles": list(GrantorRole),
             "today": datetime.now(settings.tz).date().isoformat(),
             "subscriptions": subscriptions,
+            "sessions": sessions,
+            "clip_requests": clip_requests,
+            "twitch_tokens": twitch_tokens,
+            "invite_url": invite_url,
             "twitch_available": twitch_available(settings),
             "eventsub_active": settings.eventsub_webhooks_active,
             "nav": "streamers",
@@ -305,4 +336,151 @@ def revoke(
     except PermissionError_ as exc:
         db.rollback()
         flash(request, str(exc), "error")
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/twitch-invite", dependencies=[Depends(csrf_protect)])
+def create_twitch_invite(
+    request: Request,
+    streamer_id: int,
+    include_chat: str | None = Form(None),
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    streamer = _load(db, streamer_id)
+    try:
+        url = create_invite(db, settings, streamer, actor=user, include_chat=include_chat is not None)
+        db.commit()
+    except AuthorizationError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return _redirect(streamer.id)
+    request.session["twitch_invite"] = {"streamer_id": streamer.id, "url": url}
+    flash(request, "Autorisierungslink erstellt – bitte an den Streamer bzw. Editor senden.", "success")
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/tokens/{token_id}/disconnect", dependencies=[Depends(csrf_protect)])
+def disconnect_token(
+    request: Request,
+    streamer_id: int,
+    token_id: int,
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    streamer = _load(db, streamer_id)
+    token = db.get(OAuthToken, token_id)
+    if token is None or token.streamer_id != streamer.id:
+        raise HTTPException(status_code=404, detail="Autorisierung nicht gefunden")
+    with httpx.Client(timeout=10) as http:
+        disconnect(db, settings, http, token, actor=user)
+    db.commit()
+    flash(
+        request, "Twitch-Autorisierung getrennt. Die Verarbeitung für diesen Zugang ist gestoppt.", "success"
+    )
+    return _redirect(streamer.id)
+
+
+def _load_session(db: Session, streamer: Streamer, session_id: int) -> StreamSession:
+    session = db.get(StreamSession, session_id)
+    if session is None or session.streamer_id != streamer.id:
+        raise HTTPException(status_code=404, detail="Stream nicht gefunden")
+    return session
+
+
+@router.post("/{streamer_id}/sessions/{session_id}/clip", dependencies=[Depends(csrf_protect)])
+def request_clip(
+    request: Request,
+    streamer_id: int,
+    session_id: int,
+    start: str = Form(""),
+    duration: int = Form(30),
+    title: str = Form(""),
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    streamer = _load(db, streamer_id)
+    session = _load_session(db, streamer, session_id)
+    try:
+        clip_request = request_vod_clip(
+            db,
+            streamer,
+            session,
+            start_seconds=parse_timecode(start),
+            duration=duration,
+            actor=user,
+            title=title.strip() or None,
+        )
+        db.commit()
+    except ClipRequestError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return _redirect(streamer.id)
+    if schedule_create(clip_request.id):
+        flash(request, f"Clip-Auftrag #{clip_request.id} angelegt – Twitch erstellt den Clip.", "success")
+    else:
+        flash(
+            request,
+            f"Clip-Auftrag #{clip_request.id} angelegt, aber nicht eingereiht (Twitch/Redis).",
+            "warning",
+        )
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/sessions/{session_id}/plan", dependencies=[Depends(csrf_protect)])
+def plan_session(
+    request: Request,
+    streamer_id: int,
+    session_id: int,
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    streamer = _load(db, streamer_id)
+    session = _load_session(db, streamer, session_id)
+    if not compute_rights(streamer).can_process:
+        flash(request, "Für diesen Kanal ist keine Verarbeitung erlaubt.", "error")
+    elif not session.vod_id:
+        flash(request, "Für diesen Stream ist (noch) kein VOD bekannt.", "error")
+    elif schedule_plan(session.id, delay_seconds=None, force=True):
+        flash(request, "Kandidaten werden aus den Zuschauer-Clips ermittelt.", "success")
+    else:
+        flash(request, "Die Planung läuft bereits oder Twitch ist nicht konfiguriert.", "info")
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/clip-requests/{request_id}/retry", dependencies=[Depends(csrf_protect)])
+def retry_clip_request(
+    request: Request,
+    streamer_id: int,
+    request_id: int,
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    streamer = _load(db, streamer_id)
+    clip_request = db.get(ClipRequest, request_id)
+    if clip_request is None or clip_request.streamer_id != streamer.id:
+        raise HTTPException(status_code=404, detail="Auftrag nicht gefunden")
+    try:
+        step = reset_for_retry(db, clip_request, actor=user)
+        db.commit()
+    except ClipRequestError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return _redirect(streamer.id)
+    # Neue Job-ID je Neustart, damit alte (fehlgeschlagene) Jobs nicht blockieren
+    run = f"r{int(utcnow().timestamp())}"
+    queued = (
+        schedule_download(clip_request.id, run=run)
+        if step == "download"
+        else schedule_create(clip_request.id, run=run)
+    )
+    flash(
+        request,
+        f"Auftrag #{clip_request.id} wird erneut verarbeitet."
+        if queued
+        else "Konnte nicht eingereiht werden.",
+        "success" if queued else "error",
+    )
     return _redirect(streamer.id)

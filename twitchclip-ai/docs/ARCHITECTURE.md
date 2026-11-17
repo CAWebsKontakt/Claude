@@ -110,6 +110,23 @@ Testton, oder eigene Aufnahmen, an denen Sie die Rechte haben) über einen inter
 Twitch-/TikTok-Aufrufe ausgeführt; TikTok-Uploads werden simuliert bzw. als manueller Export erzeugt. Damit lässt
 sich die komplette Pipeline (Analyse → Schnitt → Untertitel → Freigabe) ohne fremde Rechte testen (ab Phase 3–5).
 
+### Modus B im Detail (Phase 3)
+
+```
+Redakteur: Erlaubnis dokumentieren ─► Autorisierungslink (signiert, 7 Tage, einmalig)
+Streamer/Editor: Zustimmungsseite ─► Twitch-Login ─► Callback ─► Token-Tausch + /oauth2/validate
+                 Rolle = Kanalinhaber (user_id = Kanal) oder Editor ─► Token verschlüsselt speichern
+stream.offline ─► VOD zuordnen ─► (15 min) Zuschauer-Clips aktualisieren ─► beste, nicht überlappende
+                 Kandidaten (max. CLIP_CANDIDATES_PER_STREAM) ─► Get Clips Download ─► /data/downloads
+Dashboard: Ausschnitt anfordern ─► Create Clip From VOD ─► (30 s) Download
+```
+
+* Jeder Schritt ruft unmittelbar vorher `ensure_can_process()` auf. Widerruf (Dashboard, EventSub
+  `user.authorization.revoke`, stündliche Validierung, abgelehnte Erneuerung) stoppt die Verarbeitung sofort.
+* Downloads: nur HTTPS, Größenlimit `CLIP_DOWNLOAD_MAX_MB`, Teil-Dateien werden immer entfernt, SHA-256 gegen
+  Duplikate, ffprobe prüft Dauer/Auflösung/Ton.
+* Twitch-Fehler 403 bei einem Editor-Token → Token wird gesperrt (Konto ist offenbar kein Editor).
+
 ## 4. Datenmodell (Migration `0001`)
 
 | Tabelle | Inhalt / wichtige Eindeutigkeiten |
@@ -152,11 +169,14 @@ Alle Zeitstempel werden in UTC gespeichert und im Dashboard in `TIMEZONE` (Europ
   | `twitch_eventsub_sync` | 6 h | EventSub-Abos abgleichen (fehlende anlegen, defekte/überzählige löschen) |
   | `twitch_discover_clips` | `CLIP_DISCOVERY_INTERVAL_MINUTES` | öffentliche Clips suchen und bewerten |
   | `twitch_prune_clips` | 24 h | Clip-Metadaten nach `CLIP_RETENTION_DAYS` löschen |
+  | `twitch_validate_tokens` | 1 h | Nutzer-Tokens bei Twitch validieren, erneuern oder sperren |
+  | `clips_resume_stuck` | 30 min | Clip-Aufträge ohne laufenden Job (z. B. nach Redis-Neustart) wieder anstoßen |
+  | `samples_ingest` | 5 min | nur `TEST_MODE=true`: neue Dateien aus `/data/samples` übernehmen |
 
   Twitch-Jobs werden nur eingeplant, wenn Client-ID/Secret gesetzt sind und `TEST_MODE=false` ist.
   Ereignisgesteuert: nach `stream.online` Details nachladen (60 s), nach `stream.offline` VOD zuordnen (3 min,
-  bis zu 4 Versuche) und Clips des Streams suchen (15 min). Ab Phase 3 kommen Token-Refresh, ab Phase 6
-  TikTok-Statusabfragen hinzu.
+  bis zu 4 Versuche) und Clips des Streams suchen (15 min); bei Modus B anschließend Kandidaten planen
+  (15 min nach VOD-Zuordnung). Ab Phase 6 kommen TikTok-Statusabfragen hinzu.
 * **Rate-Limits:** Die von Twitch gemeldeten Werte (`Ratelimit-Remaining`/`-Reset`) werden prozessübergreifend
   in Redis gehalten. Vor jeder Anfrage bleibt ein Puffer von 10 Punkten frei; reicht das Kontingent nicht,
   wird bis zu 15 s gewartet, sonst gibt der Job an RQ zurück. Bei HTTP 429 wird bis zum Reset gewartet,
@@ -201,7 +221,7 @@ twitchclip-ai/
 ├── .env.example                  ✓ sichere Vorlage (keine echten Geheimnisse)
 ├── requirements*.txt, pyproject.toml, alembic.ini   ✓
 ├── deploy/Caddyfile              ✓ HTTPS + Reverse-Proxy
-├── migrations/                   ✓ Alembic (0001 initiales Schema, 0002 Twitch-Überwachung)
+├── migrations/                   ✓ Alembic (0001 Schema, 0002 Twitch-Überwachung, 0003 Autorisierung & Clips)
 ├── scripts/                      ✓ install_vps, init_env, backup, restore, healthcheck, update
 ├── docs/                         ✓ Architektur, API-Grenzen, Installation, Registrierung, Betrieb, Tests
 ├── tests/                        ✓ pytest (SQLite/PostgreSQL, fakeredis, später respx-Mocks)
@@ -211,20 +231,21 @@ twitchclip-ai/
     ├── main.py                   ✓ FastAPI-App
     ├── security/                 ✓ crypto (Fernet), passwords (Argon2), csrf, ratelimit
     ├── services/                 ✓ activity, users, streamers (Rechte), permissions, storage, system,
-    │                               ✓ twitch_monitor, eventsub_handler, clip_discovery, clip_scoring
+    │                               ✓ twitch_monitor, eventsub_handler, clip_discovery, clip_scoring,
+    │                               ✓ twitch_authorization, clip_processing, media_probe, samples, processing_keys
     ├── workers/                  ✓ queues, worker, scheduler, jobs/maintenance
     │   └── jobs/twitch.py        ✓  Streamer auflösen, Live-Status, Clip-Suche, EventSub-Abgleich, VOD-Zuordnung
-    │   └── jobs/clips.py         3  Clip aus VOD erzeugen, Download, Rechteprüfung
+    │   └── jobs/clips.py         ✓  Kandidaten planen, Clip aus VOD erzeugen, Download, Testmodus-Import
     │   └── jobs/analysis.py      4  KI-Analyse und Auswahl
     │   └── jobs/render.py        5  Schnitt, Untertitel, Metadaten
     │   └── jobs/publish.py       6  TikTok-Upload und Statusverfolgung
-    ├── integrations/twitch/      ✓  Helix-Client, App-Token, EventSub, Rate-Limit (User-OAuth: Phase 3)
+    ├── integrations/twitch/      ✓  Helix-Client, App-Token, Nutzer-OAuth, EventSub, Rate-Limit
     ├── integrations/tiktok/      6  OAuth (PKCE), Creator-Info, Direct Post / Inbox-Upload, Status
     ├── ai/                       4  audio, transcribe (faster-whisper), vision (OpenCV), chat_signals, scoring, dedup
     ├── media/                    5  layout (Facecam/Gameplay), subtitles (ASS), render (FFmpeg), metadata
     └── web/                      ✓ routes/, templates/, static/ (mobiloptimiert, ohne externe CDNs)
         └── routes/webhooks.py    ✓  EventSub-Endpunkt
-        └── routes/oauth.py       3/6 OAuth-Callbacks Twitch/TikTok
+        └── routes/oauth.py       ✓  Twitch-Einladung/Zustimmung/Callback (TikTok: Phase 6)
 ```
 
 ## 9. Empfohlene Servergröße

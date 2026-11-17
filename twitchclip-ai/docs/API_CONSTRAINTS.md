@@ -199,6 +199,20 @@ Werden in Phase 6 im Freigabeformular umgesetzt:
   Duplikatschutz über Message-ID (Redis, 20 min), Challenge-Antwort als `text/plain`, Widerrufe.
 * `app/services/clip_discovery.py` – Get Clips in 12-h-Fenstern über `CLIP_DISCOVERY_LOOKBACK_HOURS`.
 
+## Umsetzung Phase 3 (autorisierte Verarbeitung)
+
+* `app/integrations/twitch/user_auth.py` – Authorization Code Flow (`force_verify=true`), Token-Tausch,
+  Erneuerung, `/oauth2/validate`, `/oauth2/revoke`.
+* Angefragte Scopes: `channel:manage:clips` und `editor:manage:clips`; optional `user:read:chat`, `user:bot`,
+  `channel:bot` für Chat-Statistiken (Phase 4).
+* `HelixClient.create_clip_from_vod` (`POST TWITCH_VOD_CLIP_PATH`, Standard `/videos/clips`, Parameter als
+  Query: `editor_id`, `broadcaster_id`, `vod_id`, `vod_offset` = **Clip-Ende**, `duration`, `title`).
+* `HelixClient.get_clip_download_urls` (`GET TWITCH_CLIP_DOWNLOAD_PATH`, Standard `/clips/downloads`,
+  `editor_id`, `broadcaster_id`, bis zu 10 × `clip_id`; Felder `landscape_download_url`/`portrait_download_url`).
+* Weil beide Pfade nicht unabhängig verifiziert werden konnten, sind sie über die `.env` änderbar – ohne
+  Codeänderung. Beim ersten echten Aufruf zeigt das Aktivitätsprotokoll eine eventuelle 404-Meldung.
+* Nutzer-Tokens haben ein eigenes Rate-Limit je Nutzer (`tcai:twitch:ratelimit:user:<id>`).
+
 ## Teil 3 – Was daraus für das System folgt
 
 | Einschränkung | Umsetzung |

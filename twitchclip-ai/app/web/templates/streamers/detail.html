@@ -38,7 +38,6 @@
         {% else %}nicht verbunden{% endif %}
       </dd>
     </dl>
-    <p class="muted small">Die OAuth-Verbindung für Streamer/Editoren wird in Phase 3 (Berechtigungen &amp; Clip-Verarbeitung) aktiviert.</p>
   </section>
 
   <section class="card">
@@ -181,6 +180,126 @@
   </details>
   {% endif %}
 </section>
+
+{% if streamer.mode == "authorized" and not streamer.is_demo %}
+<section class="card" id="twitch-auth">
+  <h2>Twitch-Autorisierung (Streamer/Editor)</h2>
+  {% if twitch_tokens %}
+  <table class="table">
+    <thead><tr><th>Konto</th><th>Rolle</th><th>Berechtigungen</th><th>Geprüft</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for t in twitch_tokens %}
+      <tr class="{% if t.revoked_at %}is-muted{% endif %}">
+        <td data-label="Konto"><strong>{{ t.external_login or t.external_user_id }}</strong></td>
+        <td data-label="Rolle">{{ "Kanalinhaber" if t.role == "broadcaster" else "Editor" }}</td>
+        <td data-label="Berechtigungen" class="wrap small">{{ t.scopes | join(", ") }}</td>
+        <td data-label="Geprüft">{{ t.last_validated_at | timeago }}</td>
+        <td data-label="Status">
+          {% if t.revoked_at %}{{ m.badge("getrennt", "bad") }}<div class="muted small wrap">{{ t.last_refresh_error }}</div>
+          {% else %}{{ m.badge("aktiv", "good") }}{% endif %}
+        </td>
+        <td class="actions">
+          {% if current_user.can_edit and not t.revoked_at %}
+          <form method="post" action="/streamers/{{ streamer.id }}/tokens/{{ t.id }}/disconnect" data-confirm="Autorisierung von {{ t.external_login }} wirklich trennen?">
+            {{ m.csrf() }}<button class="btn btn-danger btn-sm" type="submit">Trennen</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Noch keine Autorisierung erteilt.", "Erstellen Sie einen Link und senden Sie ihn an den Streamer oder einen Editor des Kanals.") }}
+  {% endif %}
+
+  {% if invite_url %}
+  <div class="notice">
+    <p><strong>Autorisierungslink</strong> (gültig {{ settings.twitch_invite_valid_days }} Tage, einmalig verwendbar):</p>
+    <input type="text" readonly value="{{ invite_url }}" aria-label="Autorisierungslink" data-select-on-focus>
+    <p class="muted small">Nur an den Streamer selbst oder einen Editor des Kanals senden. Der Link enthält kein Passwort.</p>
+  </div>
+  {% endif %}
+
+  {% if current_user.can_edit %}
+  <form method="post" action="/streamers/{{ streamer.id }}/twitch-invite" class="form form-inline">
+    {{ m.csrf() }}
+    <label class="check-inline"><input type="checkbox" name="include_chat" value="1"> zusätzlich Chat-Statistik erlauben (nur Zählwerte, ab Phase 4)</label>
+    <button class="btn btn-primary" type="submit" {% if not rights.permission or not streamer.twitch_user_id %}disabled{% endif %}>Autorisierungslink erstellen</button>
+  </form>
+  {% if not rights.permission %}<p class="muted small">Voraussetzung: eine gültige, dokumentierte Erlaubnis.</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if streamer.mode == "authorized" or streamer.is_demo %}
+<section class="card" id="processing">
+  <h2>Streams &amp; Clip-Verarbeitung</h2>
+  {% if sessions %}
+  <table class="table">
+    <thead><tr><th>Stream</th><th>Dauer</th><th>VOD</th><th>Clip aus VOD</th></tr></thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td data-label="Stream"><strong>{{ s.started_at | localtime }}</strong><div class="muted small wrap">{{ s.title or "–" }}{% if s.game_name %} · {{ s.game_name }}{% endif %}</div></td>
+        <td data-label="Dauer">{% if s.ended_at %}{{ (s.ended_at - s.started_at).total_seconds() | seconds }}{% else %}{{ m.badge("läuft", "live") }}{% endif %}</td>
+        <td data-label="VOD">{% if s.vod_id %}<a href="https://www.twitch.tv/videos/{{ s.vod_id }}" target="_blank" rel="noopener noreferrer">{{ s.vod_id }}</a>{% else %}<span class="muted">–</span>{% endif %}</td>
+        <td data-label="Clip aus VOD" class="actions">
+          {% if current_user.can_edit and rights.can_process and s.vod_id %}
+          <form method="post" action="/streamers/{{ streamer.id }}/sessions/{{ s.id }}/clip" class="form-inline">
+            {{ m.csrf() }}
+            <input type="text" name="start" placeholder="Start 1:02:03" required class="input-sm" aria-label="Startzeit im VOD">
+            <input type="number" name="duration" value="{{ [settings.clip_duration_max, 60] | min }}" min="5" max="60" class="input-sm" aria-label="Länge in Sekunden">
+            <button class="btn btn-ghost btn-sm" type="submit">Clip erstellen</button>
+          </form>
+          <form method="post" action="/streamers/{{ streamer.id }}/sessions/{{ s.id }}/plan">
+            {{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Kandidaten planen</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% elif not streamer.is_demo %}
+    {{ m.empty("Noch keine Streams aufgezeichnet.", "Streams erscheinen hier, sobald der Kanal live geht.") }}
+  {% endif %}
+
+  <h3>Clip-Aufträge</h3>
+  {% if clip_requests %}
+  <table class="table">
+    <thead><tr><th>#</th><th>Quelle</th><th>Ausschnitt</th><th>Status</th><th>Datei</th></tr></thead>
+    <tbody>
+    {% for r in clip_requests %}
+      <tr>
+        <td data-label="#">{{ r.id }}</td>
+        <td data-label="Quelle">{{ CLIP_SOURCE_LABELS.get(r.source, r.source) }}<div class="muted small wrap">{{ r.title or "" }}</div></td>
+        <td data-label="Ausschnitt">{% if r.start_seconds is not none %}{{ r.start_seconds | seconds }} – {{ r.vod_offset | seconds }}{% elif r.duration %}{{ r.duration | seconds }}{% else %}–{% endif %}</td>
+        <td data-label="Status">
+          {% set tones = {"downloaded": "good", "failed": "bad", "skipped": "warn", "duplicate": "neutral"} %}
+          {{ m.badge(CLIP_STATUS_LABELS.get(r.status, r.status), tones.get(r.status, "info")) }}
+          {% if r.error %}<div class="muted small wrap">{{ r.error }}</div>{% endif %}
+          {% if current_user.can_edit and r.status in ["skipped", "failed"] and r.source != "sample" %}
+          <form method="post" action="/streamers/{{ streamer.id }}/clip-requests/{{ r.id }}/retry">
+            {{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Erneut versuchen</button>
+          </form>
+          {% endif %}
+        </td>
+        <td data-label="Datei">
+          {% if r.status == "downloaded" and r.file_path %}
+            <a href="/media/clips/{{ r.id }}.mp4" target="_blank">Ansehen</a>
+            <span class="muted small">{{ r.file_size | filesize }}{% if r.media_info %} · {{ r.media_info.width }}×{{ r.media_info.height }}{% endif %}</span>
+          {% else %}–{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Noch keine Clip-Aufträge.", "Nach jedem Stream werden die besten Zuschauer-Clips automatisch übernommen; einzelne Ausschnitte lassen sich oben anfordern." if not streamer.is_demo else "Beispieldateien in /data/samples werden alle 5 Minuten übernommen.") }}
+  {% endif %}
+</section>
+{% endif %}
 
 <div class="grid-2">
   <section class="card">

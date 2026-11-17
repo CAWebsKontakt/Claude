@@ -195,6 +195,7 @@ class EventSubInfo:
     cost: int
     broadcaster_user_id: str | None
     callback: str | None
+    client_id: str | None = None
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> EventSubInfo:
@@ -208,7 +209,29 @@ class EventSubInfo:
             cost=int(data.get("cost") or 0),
             broadcaster_user_id=condition.get("broadcaster_user_id"),
             callback=transport.get("callback"),
+            client_id=condition.get("client_id"),
         )
+
+
+@dataclass(frozen=True)
+class UserCredential:
+    """Nutzer-Token eines Streamers/Editors für einen einzelnen Aufruf (nie loggen!)."""
+
+    user_id: str
+    access_token: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class CreatedClip:
+    id: str
+    edit_url: str | None
+
+
+@dataclass(frozen=True)
+class ClipDownload:
+    clip_id: str
+    landscape_url: str
+    portrait_url: str | None
 
 
 @dataclass
@@ -264,16 +287,24 @@ class HelixClient:
         params: list[tuple[str, str]] | dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
         expected: Iterable[int] = (200,),
+        user_token: UserCredential | None = None,
     ) -> httpx.Response:
+        """Führt eine Helix-Anfrage aus – mit App-Token oder, falls angegeben, mit einem Nutzer-Token.
+
+        Bei Nutzer-Tokens führt 401 zu TwitchAuthError; die Erneuerung übernimmt der Aufrufer
+        (siehe app/services/twitch_authorization.py), weil sie die Datenbank betrifft.
+        """
         expected = tuple(expected)
         url = f"{self.settings.twitch_api_base}{path}"
+        limiter = self.limiter if user_token is None else self._user_limiter(user_token.user_id)
         attempt = 0
         token_refreshed = False
         while True:
-            self.limiter.before_request()
+            limiter.before_request()
+            bearer = user_token.access_token if user_token is not None else self.tokens.get_token()
             headers = {
                 "Client-Id": self.settings.twitch_client_id,
-                "Authorization": f"Bearer {self.tokens.get_token()}",
+                "Authorization": f"Bearer {bearer}",
             }
             try:
                 response = self.http.request(method, url, params=params, json=json, headers=headers)
@@ -286,17 +317,19 @@ class HelixClient:
                     f"Twitch nicht erreichbar ({exc.__class__.__name__})", retryable=True
                 ) from exc
 
-            self.limiter.update_from_headers(response.headers)
+            limiter.update_from_headers(response.headers)
             status = response.status_code
 
             if status == 401:
+                if user_token is not None:
+                    raise TwitchAuthError("Twitch lehnt das Nutzer-Token ab (401)")
                 if not token_refreshed:
                     token_refreshed = True
                     self.tokens.invalidate()
                     continue
                 raise TwitchAuthError("Twitch lehnt das App-Token ab (401)")
             if status == 429:
-                wait = self.limiter.seconds_until_reset(response.headers)
+                wait = limiter.seconds_until_reset(response.headers)
                 if wait <= MAX_INLINE_WAIT_SECONDS and attempt < self.max_retries:
                     attempt += 1
                     if "ratelimit-reset" not in response.headers:
@@ -318,6 +351,9 @@ class HelixClient:
                     status_code=status,
                 )
             return response
+
+    def _user_limiter(self, user_id: str) -> RateLimiter:
+        return RateLimiter(self.redis, f"user:{user_id}", sleep=self.sleep)
 
     @staticmethod
     def _error_message(response: httpx.Response) -> str:
@@ -397,6 +433,63 @@ class HelixClient:
         payload = self.request("GET", "/videos", params=params).json()
         return [TwitchVideo.from_api(item) for item in payload.get("data", [])]
 
+    # Autorisierte Clip-Endpunkte (Modus B) --------------------------------
+    def create_clip_from_vod(
+        self,
+        credential: UserCredential,
+        *,
+        broadcaster_id: str,
+        vod_id: str,
+        vod_offset: int,
+        duration: int,
+        title: str | None = None,
+    ) -> CreatedClip:
+        """Erzeugt einen Clip aus einem VOD. vod_offset ist das ENDE des Clips (Sekunden)."""
+        params = [
+            ("editor_id", credential.user_id),
+            ("broadcaster_id", broadcaster_id),
+            ("vod_id", vod_id),
+            ("vod_offset", str(vod_offset)),
+            ("duration", str(duration)),
+        ]
+        if title:
+            params.append(("title", title[:140]))
+        payload = self.request(
+            "POST",
+            self.settings.twitch_vod_clip_path,
+            params=params,
+            expected=(200, 202),
+            user_token=credential,
+        ).json()
+        data = (payload.get("data") or [{}])[0]
+        if not data.get("id"):
+            raise TwitchAPIError("Antwort von Create Clip From VOD enthält keine Clip-ID")
+        return CreatedClip(id=str(data["id"]), edit_url=data.get("edit_url"))
+
+    def get_clip_download_urls(
+        self, credential: UserCredential, *, broadcaster_id: str, clip_ids: Iterable[str]
+    ) -> dict[str, ClipDownload]:
+        """Temporäre Download-Adressen (max. 10 Clips je Anfrage)."""
+        result: dict[str, ClipDownload] = {}
+        ids = list(clip_ids)
+        for start in range(0, len(ids), 10):
+            params = [("editor_id", credential.user_id), ("broadcaster_id", broadcaster_id)] + [
+                ("clip_id", clip_id) for clip_id in ids[start : start + 10]
+            ]
+            payload = self.request(
+                "GET", self.settings.twitch_clip_download_path, params=params, user_token=credential
+            ).json()
+            for item in payload.get("data", []):
+                clip_id = str(item.get("clip_id") or item.get("id") or "")
+                landscape = item.get("landscape_download_url") or item.get("download_url")
+                if clip_id and landscape:
+                    result[clip_id] = ClipDownload(
+                        clip_id=clip_id,
+                        landscape_url=landscape,
+                        portrait_url=item.get("portrait_download_url"),
+                    )
+        return result
+
     # EventSub --------------------------------------------------------------
     def list_eventsub(self, *, max_pages: int = 50) -> EventSubListing:
         listing = EventSubListing()
@@ -408,12 +501,19 @@ class HelixClient:
         return listing
 
     def create_eventsub(
-        self, sub_type: str, broadcaster_user_id: str, callback: str, secret: str, *, version: str = "1"
+        self,
+        sub_type: str,
+        broadcaster_user_id: str | None,
+        callback: str,
+        secret: str,
+        *,
+        version: str = "1",
+        condition: dict[str, str] | None = None,
     ) -> tuple[EventSubInfo, dict[str, int]]:
         body = {
             "type": sub_type,
             "version": version,
-            "condition": {"broadcaster_user_id": broadcaster_user_id},
+            "condition": condition or {"broadcaster_user_id": broadcaster_user_id},
             "transport": {"method": "webhook", "callback": callback, "secret": secret},
         }
         payload = self.request("POST", "/eventsub/subscriptions", json=body, expected=(202,)).json()

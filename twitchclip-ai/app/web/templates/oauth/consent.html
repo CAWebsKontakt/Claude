@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Twitch-Zugriff erlauben{% endblock %}
+{% block public %}
+<section class="card login-card">
+  <h1 class="brand brand-lg">TwitchClip <span>AI</span></h1>
+  <h2>Zugriff für „{{ streamer.name }}“ erlauben</h2>
+  <p>Sie wurden gebeten, TwitchClip AI Zugriff auf Clips des Kanals
+    <strong>twitch.tv/{{ streamer.twitch_login }}</strong> zu geben. Melden Sie sich dafür als
+    <strong>Kanalinhaber</strong> oder als <strong>Editor</strong> dieses Kanals bei Twitch an.</p>
+  <h3>Angefragte Berechtigungen</h3>
+  <ul class="bullets">
+    {% for scope, text in scopes %}<li><code>{{ scope }}</code> – {{ text }}</li>{% endfor %}
+  </ul>
+  <h3>Wofür?</h3>
+  <ul class="bullets">
+    <li>Aus Ihren Streams werden Highlights ausgewählt, als Clip erzeugt, heruntergeladen und zu Hochformat-Videos geschnitten.</li>
+    <li>Veröffentlicht wird nur, wenn Ihre schriftliche Erlaubnis das umfasst – und jedes Video wird vorher manuell freigegeben.</li>
+    <li>Ihr Passwort sehen wir nie. Tokens werden verschlüsselt gespeichert.</li>
+    <li>Widerruf jederzeit: Twitch → Einstellungen → Verbindungen → TwitchClip AI trennen. Die Verarbeitung stoppt dann sofort.</li>
+  </ul>
+  <a class="btn btn-primary btn-block" href="/oauth/twitch/authorize?invite={{ invite | urlencode }}">Weiter zur Anmeldung bei Twitch</a>
+  <p class="muted small">Der Link ist einmalig verwendbar und läuft automatisch ab.</p>
+</section>
+{% endblock %}
+
+{% block content %}{{ self.public() }}{% endblock %}

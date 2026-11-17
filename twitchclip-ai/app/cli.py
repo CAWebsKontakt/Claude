@@ -9,6 +9,8 @@ Beispiele (im Container):
     python -m app.cli check-config
     python -m app.cli cleanup-storage --dry-run
     python -m app.cli rotate-token-key
+    python -m app.cli make-samples --count 3 --duration 60
+    python -m app.cli ingest-samples
 """
 
 from __future__ import annotations
@@ -217,6 +219,41 @@ def cmd_rotate_token_key(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_make_samples(args: argparse.Namespace) -> int:
+    """Synthetische Beispielvideos für den Testmodus erzeugen (keine Fremdinhalte)."""
+    from app.config import get_settings
+    from app.services.samples import SampleGenerationError, generate_samples
+
+    try:
+        created = generate_samples(
+            get_settings(), count=args.count, duration=args.duration, overwrite=args.overwrite
+        )
+    except SampleGenerationError as exc:
+        _print_err(f"Fehler: {exc}")
+        return 1
+    for path in created:
+        print(f"✓ {path}")
+    if not created:
+        print("Keine neuen Dateien (bereits vorhanden – mit --overwrite neu erzeugen).")
+    return 0
+
+
+def cmd_ingest_samples(_args: argparse.Namespace) -> int:
+    """Beispieldateien sofort übernehmen (nur mit TEST_MODE=true)."""
+    from app.config import get_settings
+    from app.db import session_scope
+    from app.services.clip_processing import ingest_samples
+
+    settings = get_settings()
+    if not settings.test_mode:
+        _print_err("TEST_MODE ist nicht aktiv – in der .env TEST_MODE=true setzen und neu starten.")
+        return 1
+    with session_scope() as db:
+        created = ingest_samples(db, settings)
+        print(f"✓ {len(created)} Beispieldatei(en) übernommen")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="TwitchClip AI – Verwaltung")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -249,6 +286,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("cleanup-storage", help="Alte Videodateien löschen")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_cleanup_storage)
+
+    p = sub.add_parser("make-samples", help="Synthetische Beispielvideos für den Testmodus erzeugen")
+    p.add_argument("--count", type=int, default=3)
+    p.add_argument("--duration", type=int, default=60, help="Sekunden je Video (10–600)")
+    p.add_argument("--overwrite", action="store_true")
+    p.set_defaults(func=cmd_make_samples)
+
+    sub.add_parser("ingest-samples", help="Beispieldateien übernehmen (TEST_MODE=true)").set_defaults(
+        func=cmd_ingest_samples
+    )
 
     sub.add_parser("rotate-token-key", help="Tokens mit neuem Schlüssel verschlüsseln").set_defaults(
         func=cmd_rotate_token_key

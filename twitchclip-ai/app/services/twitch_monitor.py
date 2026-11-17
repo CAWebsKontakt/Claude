@@ -30,6 +30,7 @@ STATUS_KEY = "tcai:twitch:status"
 # Nach einem stream.online-Ereignis kann Get Streams den Stream noch kurz nicht liefern.
 ONLINE_GRACE = timedelta(minutes=5)
 HEALTHY_SUB_STATUSES = {"enabled", "webhook_callback_verification_pending"}
+REVOKE_TYPE = "user.authorization.revoke"
 
 
 # ---------------------------------------------------------------------------
@@ -393,9 +394,54 @@ def sync_eventsub(db: Session, client: HelixClient, settings: Settings) -> SyncR
         except TwitchAPIError as exc:
             report.errors.append(f"Anlegen {sub_type} für {streamer.twitch_login}: {exc}")
 
+    _sync_revoke_subscription(client, settings, listing, report, secret)
     _mirror_subscriptions(db, kept_remote)
     db.flush()
     return report
+
+
+def _sync_revoke_subscription(
+    client: HelixClient, settings: Settings, listing, report: SyncReport, secret: str
+) -> None:
+    """Genau ein Abo user.authorization.revoke (Bedingung: unsere Client-ID), solange Webhooks aktiv sind.
+
+    So erfährt das System sofort, wenn ein Streamer/Editor die App bei Twitch trennt.
+    """
+    existing = [s for s in listing.subscriptions if s.type == REVOKE_TYPE]
+    keep = None
+    for sub in existing:
+        healthy = (
+            report.webhooks_active
+            and sub.status in HEALTHY_SUB_STATUSES
+            and sub.callback == settings.eventsub_callback_url
+            and sub.client_id == settings.twitch_client_id
+        )
+        if healthy and keep is None:
+            keep = sub
+            continue
+        try:
+            client.delete_eventsub(sub.id)
+            report.deleted += 1
+        except TwitchAPIError as exc:
+            report.errors.append(f"Löschen {REVOKE_TYPE}: {exc}")
+    if keep is not None:
+        report.kept += 1
+        return
+    if not report.webhooks_active:
+        return
+    try:
+        client.create_eventsub(
+            REVOKE_TYPE,
+            None,
+            settings.eventsub_callback_url,
+            secret,
+            condition={"client_id": settings.twitch_client_id},
+        )
+        report.created += 1
+    except EventSubConflictError:
+        report.kept += 1
+    except TwitchAPIError as exc:
+        report.errors.append(f"Anlegen {REVOKE_TYPE}: {exc}")
 
 
 def _mirror_subscriptions(db: Session, remote: dict[tuple[str, str], object]) -> None:

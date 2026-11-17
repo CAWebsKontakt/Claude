@@ -26,6 +26,7 @@ from app.web.routes import (
     health,
     highlights,
     media,
+    oauth,
     publishing,
     streamers,
     system,
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         users,
         system,
         media,
+        oauth,
         webhooks,
     ):
         app.include_router(module.router)

@@ -26,10 +26,11 @@
 **Webhook-Voraussetzung:** `https://clips.ihre-domain.de/webhooks/twitch/eventsub` muss aus dem Internet über
 Port 443 erreichbar sein (Caddy erledigt TLS automatisch).
 
-**Was Streamer in Modus B tun (Phase 3):** Sie (oder ihr Editor) öffnen einen Autorisierungslink aus dem
-Dashboard, melden sich bei Twitch an und bestätigen die Scopes `editor:manage:clips` bzw. `channel:manage:clips`
-(und optional `channel:bot` für Chat-Statistik). Den Zugriff können sie jederzeit unter
-*Twitch → Einstellungen → Verbindungen* widerrufen – TwitchClip AI erkennt das und stoppt die Verarbeitung.
+**Was Streamer in Modus B tun:** Sie (oder ein Editor des Kanals) öffnen den Autorisierungslink aus dem
+Dashboard, lesen die Erklärung der Berechtigungen, melden sich bei Twitch an und bestätigen die Scopes
+`channel:manage:clips` bzw. `editor:manage:clips` (optional `user:read:chat`, `user:bot`, `channel:bot` für die
+Chat-Statistik). Den Zugriff können sie jederzeit unter *Twitch → Einstellungen → Verbindungen* widerrufen –
+TwitchClip AI erkennt das sofort (EventSub) und stoppt die Verarbeitung.
 
 ## 2. TikTok (benötigt ab Phase 6)
 

@@ -179,3 +179,25 @@ def offline_notification(broadcaster_id: str, login: str) -> bytes:
             },
         }
     ).encode()
+
+
+def user_token_response(
+    access="user-access-new", refresh="user-refresh-new", scopes=None, expires_in=14400
+) -> dict:
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "expires_in": expires_in,
+        "scope": scopes or ["channel:manage:clips", "editor:manage:clips"],
+        "token_type": "bearer",
+    }
+
+
+def validate_response(user_id="111", login="partner", scopes=None, client_id="test-client-id") -> dict:
+    return {
+        "client_id": client_id,
+        "login": login,
+        "scopes": scopes or ["channel:manage:clips", "editor:manage:clips"],
+        "user_id": user_id,
+        "expires_in": 14000,
+    }

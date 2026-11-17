@@ -23,8 +23,16 @@ Kanäle bleiben unverändert, entfernt wird nie etwas automatisch. Danach ist da
    mit Umfang: nur Verarbeitung oder auch TikTok-Veröffentlichung, ggf. Einschränkungen.
 2. Dashboard → Streamer → *Neue Erlaubnis dokumentieren*: Wer, Rolle, Nachweis (Ablageort), Gültigkeit,
    Umfang, Bestätigung. Option „Danach auf Modus B umstellen“.
-3. Ab Phase 3: Autorisierungslink an den Streamer/Editor senden (Twitch-OAuth).
-4. Der Status wechselt dann zu „Nur Verarbeitung erlaubt“ bzw. „Verarbeitung & Veröffentlichung erlaubt“.
+3. Abschnitt *Twitch-Autorisierung* → **Autorisierungslink erstellen** (optional „Chat-Statistik erlauben“).
+   Den angezeigten Link an den Streamer oder einen Editor des Kanals senden (gültig `TWITCH_INVITE_VALID_DAYS`
+   Tage, einmalig verwendbar). Er/sie sieht eine Erklärung aller Berechtigungen, meldet sich bei Twitch an und
+   stimmt zu – ein Dashboard-Konto ist nicht nötig.
+4. Der Status wechselt zu „Nur Verarbeitung erlaubt“ bzw. „Verarbeitung & Veröffentlichung erlaubt“; in der
+   Tabelle steht, wer autorisiert hat (Kanalinhaber oder Editor) und wann das Token zuletzt geprüft wurde.
+
+Zugriff beenden: *Trennen* in der Autorisierungstabelle (widerruft das Token auch bei Twitch). Trennt der
+Streamer die App selbst bei Twitch, erkennt TwitchClip AI das per EventSub sofort, spätestens bei der
+stündlichen Prüfung.
 
 Widerruf: in der Erlaubnis-Tabelle *Widerrufen* (mit Grund). Ist keine gültige Erlaubnis mehr vorhanden, fällt
 der Streamer **automatisch** auf Modus A zurück. Abgelaufene Erlaubnisse (Gültig bis) wirken genauso.
@@ -60,8 +68,37 @@ docker compose exec worker python -c "from app.workers.jobs.twitch import discov
 | System zeigt „nur Polling“ | `APP_BASE_URL` muss `https://` ohne Port sein, `TWITCH_EVENTSUB_SECRET` gesetzt, `TWITCH_EVENTSUB_ENABLED=true` |
 | „EventSub-Kostenlimit erreicht“ | mehr als ca. 5.000 Kanäle ohne Autorisierung – überzählige laufen per Polling |
 | „App-Token abgelehnt“ | `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` prüfen, Secret ggf. in der Twitch-Konsole neu erzeugen |
+| Clip-Auftrag „Fehlgeschlagen … HTTP 404“ | Pfad des Clip-Endpunkts geändert? `TWITCH_VOD_CLIP_PATH`/`TWITCH_CLIP_DOWNLOAD_PATH` mit der Twitch-Referenz abgleichen |
+| „Zugriff verweigert (403)“ beim Editor | Das autorisierende Konto ist kein Editor des Kanals → Streamer selbst autorisieren lassen |
+| Kein VOD gefunden | Beim Streamer muss „Vergangene Übertragungen speichern“ aktiviert sein |
 
-## 3. Benutzer
+## 3. Clip-Verarbeitung (Modus B)
+
+* **Automatisch:** Nach jedem Stream wird das VOD zugeordnet; 15 Minuten später werden die besten,
+  sich nicht überlappenden Zuschauer-Clips (max. `CLIP_CANDIDATES_PER_STREAM`) übernommen und heruntergeladen.
+* **Manuell:** Detailseite → *Streams & Clip-Verarbeitung* → Startzeit (z. B. `1:02:03`) und Länge (5–60 s) →
+  *Clip erstellen*. Twitch erzeugt den Clip im Kanal; der Download folgt automatisch.
+* **Status je Auftrag:** Geplant → (Wird erstellt → Twitch verarbeitet) → Wird geladen → **Bereit für Analyse**.
+  Übersprungen = Rechte fehlten zum Zeitpunkt des Schritts; Fehlgeschlagen = nach allen Wiederholungen.
+  Beide lassen sich mit *Erneut versuchen* neu starten (die Rechte werden dabei erneut geprüft).
+* **Dateien:** `/data/downloads/<streamer-id>/clip-<auftrag>.mp4`, Vorschau über *Ansehen*; Löschung nach
+  `STORAGE_RETENTION_DAYS`.
+
+### Testmodus mit Beispieldateien (ohne fremde Rechte)
+
+```bash
+# 1. In .env: TEST_MODE=true  → docker compose up -d
+# 2. Synthetische Testvideos erzeugen (Testbild + „Facecam“ + Ton mit lauten Stellen, keine Fremdinhalte)
+docker compose exec worker-media python -m app.cli make-samples --count 3 --duration 60
+# 3. Sofort übernehmen (sonst automatisch alle 5 Minuten)
+docker compose exec worker python -m app.cli ingest-samples
+```
+
+Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/samples` kopiert werden
+(`docker compose cp mein-video.mp4 worker:/data/samples/`). Sie erscheinen beim Demo-Kanal „Testmodus
+(Beispieldateien)“. Im Testmodus ruft das System **keine** Twitch-API auf.
+
+## 4. Benutzer
 
 * Dashboard → *Benutzer* (nur Admins): anlegen, Rolle ändern, deaktivieren, Passwort setzen.
 * Rollen: **Administrator** (alles), **Redakteur** (Streamer, Rechte, Highlights, Freigaben), **Betrachter** (lesen).
@@ -71,7 +108,7 @@ docker compose exec worker python -c "from app.workers.jobs.twitch import discov
   docker compose exec web python -m app.cli reset-password --username admin
   ```
 
-## 4. Überwachung
+## 5. Überwachung
 
 | Was | Wie |
 |---|---|
@@ -105,7 +142,7 @@ for name in ALL_QUEUES:
 PY
 ```
 
-## 5. Speicher
+## 6. Speicher
 
 * Automatisch: stündliche Bereinigung (`STORAGE_RETENTION_DAYS`, `STORAGE_MAX_GB`), Videos in offener Freigabe
   bleiben geschützt. Docker-Logs sind auf 5 × 10 MB je Container begrenzt.
@@ -117,7 +154,7 @@ PY
   docker image prune -f                                                    # alte Images
   ```
 
-## 6. Sicherung und Wiederherstellung
+## 7. Sicherung und Wiederherstellung
 
 ```bash
 bash scripts/backup.sh                                     # sofortiges Backup nach ./backups
@@ -126,7 +163,7 @@ bash scripts/restore.sh backups/twitchclip-YYYYMMDD-HHMMSS.sql.gz
 
 Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTION_KEY`) – getrennt voneinander.
 
-## 7. Schlüssel rotieren
+## 8. Schlüssel rotieren
 
 * `SECRET_KEY` ändern → alle Benutzer werden abgemeldet. `docker compose up -d`.
 * `TOKEN_ENCRYPTION_KEY` rotieren:
@@ -139,7 +176,7 @@ Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTI
   # danach in .env nur noch TOKEN_ENCRYPTION_KEY=<NEU>, erneut docker compose up -d
   ```
 
-## 8. Fehlerbehebung
+## 9. Fehlerbehebung
 
 | Symptom | Ursache / Lösung |
 |---|---|

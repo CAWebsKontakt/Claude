@@ -87,10 +87,76 @@ def twitch_clip(
         title=kwargs.pop("title", "Epischer Clip"),
         creator_name="zuschauer",
         view_count=kwargs.pop("view_count", 1234),
-        duration=28.5,
+        duration=kwargs.pop("duration", 28.5),
         clip_created_at=kwargs.pop("clip_created_at", utcnow() - timedelta(hours=3)),
         discovery_score=kwargs.pop("discovery_score", 81.0),
         **kwargs,
+    )
+    db.add(obj)
+    db.flush()
+    return obj
+
+
+def authorized_streamer(
+    db,
+    settings,
+    login: str = "partner",
+    *,
+    twitch_user_id: str = "111",
+    publishing: bool = True,
+    role: str = "broadcaster",
+    token_user_id: str | None = None,
+    scopes: list[str] | None = None,
+    expires_in_minutes: int = 120,
+):
+    """Streamer in Modus B mit dokumentierter Erlaubnis und gültigem Twitch-Token."""
+    from app.models import OAuthToken, StreamerPermission, User
+
+    admin = db.query(User).first()
+    s = streamer(db, login, twitch_user_id=twitch_user_id, mode="authorized")
+    db.add(
+        StreamerPermission(
+            streamer_id=s.id,
+            granted_by_name="Inhaber",
+            granted_by_role="broadcaster",
+            allows_processing=True,
+            allows_publishing=publishing,
+            evidence_reference="Vertrag Test",
+            valid_from=utcnow() - timedelta(days=1),
+            recorded_by_user_id=admin.id if admin else None,
+        )
+    )
+    db.add(
+        OAuthToken(
+            provider="twitch",
+            streamer_id=s.id,
+            external_user_id=token_user_id or twitch_user_id,
+            external_login=login,
+            scopes=scopes or ["channel:manage:clips"],
+            access_token="user-access-1",
+            refresh_token="user-refresh-1",
+            expires_at=utcnow() + timedelta(minutes=expires_in_minutes),
+            role=role,
+        )
+    )
+    db.flush()
+    db.refresh(s)
+    return s
+
+
+def stream_session(
+    db, streamer_obj, *, vod_id: str | None = "v-100", stream_id: str = "5001", ended: bool = True
+):
+    from app.models import StreamSession
+
+    obj = StreamSession(
+        streamer_id=streamer_obj.id,
+        twitch_stream_id=stream_id,
+        title="Ranked",
+        started_at=utcnow() - timedelta(hours=3),
+        ended_at=utcnow() - timedelta(minutes=30) if ended else None,
+        status="ended" if ended else "live",
+        vod_id=vod_id,
     )
     db.add(obj)
     db.flush()

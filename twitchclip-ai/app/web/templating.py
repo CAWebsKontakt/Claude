@@ -13,6 +13,8 @@ from starlette.responses import Response
 from app import __version__
 from app.config import get_settings
 from app.enums import (
+    CLIP_SOURCE_LABELS,
+    CLIP_STATUS_LABELS,
     GRANTOR_LABELS,
     HIGHLIGHT_STATUS_LABELS,
     MODE_LABELS,
@@ -90,6 +92,8 @@ env.filters["filesize"] = _filesize
 env.filters["seconds"] = _seconds
 env.filters["score_tone"] = score_tone
 env.globals.update(
+    CLIP_SOURCE_LABELS=CLIP_SOURCE_LABELS,
+    CLIP_STATUS_LABELS=CLIP_STATUS_LABELS,
     MODE_LABELS=MODE_LABELS,
     ROLE_LABELS=ROLE_LABELS,
     HIGHLIGHT_STATUS_LABELS=HIGHLIGHT_STATUS_LABELS,

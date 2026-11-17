@@ -32,6 +32,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +93,8 @@ class Streamer(TimestampMixin, Base):
     broadcaster_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     mode: Mapped[str] = mapped_column(String(16), default=StreamerMode.PUBLIC.value, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Demo-Kanal für den Testmodus (eigene Beispieldateien, kein Twitch-Konto)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 
     # Live-Status (EventSub + Polling als Rückfallebene)
     is_live: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -196,7 +199,27 @@ class OAuthToken(TimestampMixin, Base):
     """OAuth-Tokens. access_token/refresh_token liegen ausschließlich verschlüsselt in der DB."""
 
     __tablename__ = "oauth_tokens"
-    __table_args__ = (UniqueConstraint("provider", "external_user_id", name="uq_oauth_tokens_provider_user"),)
+    __table_args__ = (
+        # Twitch: ein Token je (Streamer, autorisierender Nutzer) – ein Editor kann mehrere Kanäle betreuen.
+        Index(
+            "uq_oauth_tokens_streamer_user",
+            "provider",
+            "streamer_id",
+            "external_user_id",
+            unique=True,
+            postgresql_where=text("streamer_id IS NOT NULL"),
+            sqlite_where=text("streamer_id IS NOT NULL"),
+        ),
+        # TikTok: ein Token je Konto
+        Index(
+            "uq_oauth_tokens_account_user",
+            "provider",
+            "external_user_id",
+            unique=True,
+            postgresql_where=text("streamer_id IS NULL"),
+            sqlite_where=text("streamer_id IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -215,6 +238,9 @@ class OAuthToken(TimestampMixin, Base):
     refresh_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_refresh_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Twitch: broadcaster | editor
+    role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_validated_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     streamer: Mapped[Streamer | None] = relationship(back_populates="oauth_tokens")
     tiktok_account: Mapped[TikTokAccount | None] = relationship(back_populates="oauth_tokens")
@@ -322,6 +348,55 @@ class ChatActivity(Base):
     hype_keyword_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class ClipRequest(TimestampMixin, Base):
+    """Ein berechtigter Clip, der erzeugt und/oder heruntergeladen wird (Modus B oder Testmodus).
+
+    dedup_key verhindert doppelte Verarbeitung (z. B. "viewer:<clip_id>", "vod:<vod>:<ende>:<dauer>").
+    """
+
+    __tablename__ = "clip_requests"
+    __table_args__ = (Index("ix_clip_requests_status", "status"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    streamer_id: Mapped[int] = mapped_column(
+        ForeignKey("streamers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    stream_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stream_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    oauth_token_id: Mapped[int | None] = mapped_column(
+        ForeignKey("oauth_tokens.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    vod_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Twitch-Konvention: vod_offset = ENDE des Clips im VOD (Sekunden)
+    vod_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    twitch_clip_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(140), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="planned", nullable=False)
+    reason: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    media_info: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    requested_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    streamer: Mapped[Streamer] = relationship()
+    stream_session: Mapped[StreamSession | None] = relationship()
+
+    @property
+    def start_seconds(self) -> int | None:
+        if self.vod_offset is None or self.duration is None:
+            return None
+        return max(0, self.vod_offset - self.duration)
+
+
 class Highlight(TimestampMixin, Base):
     __tablename__ = "highlights"
     __table_args__ = (Index("ix_highlights_status_score", "status", "score"),)
@@ -332,6 +407,9 @@ class Highlight(TimestampMixin, Base):
     )
     stream_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("stream_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    clip_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clip_requests.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source_type: Mapped[str] = mapped_column(String(16), nullable=False)
     source_ref: Mapped[str] = mapped_column(String(256), nullable=False)

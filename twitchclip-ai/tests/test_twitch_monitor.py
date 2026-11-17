@@ -175,7 +175,8 @@ def test_sync_eventsub(helix, twitch_settings, db_session):
         )
     )
     deleted = respx.delete(f"{API}/eventsub/subscriptions").mock(return_value=httpx.Response(204))
-    created_ids = iter(["new-1", "new-2", "new-3"])
+    created_ids = iter(["new-1", "new-2", "new-3", "new-revoke"])
+    conditions = []
 
     def create(request):
         data = json.loads(request.content)
@@ -184,10 +185,11 @@ def test_sync_eventsub(helix, twitch_settings, db_session):
             "callback": CALLBACK,
             "secret": twitch_settings.twitch_eventsub_secret.get_secret_value(),
         }
+        conditions.append((data["type"], data["condition"]))
         sub = subscription(
             next(created_ids),
             data["type"],
-            data["condition"]["broadcaster_user_id"],
+            data["condition"].get("broadcaster_user_id", ""),
             status="webhook_callback_verification_pending",
         )
         return httpx.Response(202, json={"data": [sub], "total": 4, "total_cost": 4, "max_total_cost": 10000})
@@ -197,7 +199,9 @@ def test_sync_eventsub(helix, twitch_settings, db_session):
 
     deleted_ids = {call.request.url.params["id"] for call in deleted.calls}
     assert deleted_ids == {"dup-1", "bad-1", "old-cb", "paused-1"}
-    assert report.created == 3 and created.call_count == 3  # 111 offline, 222 online+offline
+    # 111 offline, 222 online+offline und einmal user.authorization.revoke für die Client-ID
+    assert report.created == 4 and created.call_count == 4
+    assert ("user.authorization.revoke", {"client_id": "test-client-id"}) in conditions
     assert report.kept == 1 and not report.errors
     mirrored = db_session.query(EventSubSubscription).all()
     assert len(mirrored) == 4
@@ -214,9 +218,16 @@ def test_sync_eventsub_respects_cost_limit(helix, twitch_settings, db_session):
             200, json={"data": [], "total": 0, "total_cost": 10000, "max_total_cost": 10000}
         )
     )
-    created = respx.post(f"{API}/eventsub/subscriptions")
+    revoke_sub = subscription("rv", "user.authorization.revoke", "", cost=0)
+    created = respx.post(f"{API}/eventsub/subscriptions").mock(
+        return_value=httpx.Response(
+            202, json={"data": [revoke_sub], "total_cost": 10000, "max_total_cost": 10000}
+        )
+    )
     report = sync_eventsub(db_session, helix, twitch_settings)
-    assert created.call_count == 0
+    # Keine kostenpflichtigen Kanal-Abos mehr – nur das (kostenlose) Widerrufs-Abo der App
+    assert created.call_count == 1
+    assert json.loads(created.calls[0].request.content)["type"] == "user.authorization.revoke"
     assert "Kostenlimit" in report.errors[0]
 
 

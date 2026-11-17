@@ -64,7 +64,11 @@ def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
                 timeout=1800,
             ),
             PeriodicJob("twitch_prune_clips", f"{TWITCH_JOBS}.prune_twitch_clips_job", 86400),
+            PeriodicJob("twitch_validate_tokens", f"{TWITCH_JOBS}.validate_twitch_tokens_job", 3600),
+            PeriodicJob("clips_resume_stuck", "app.workers.jobs.clips.resume_stuck_requests_job", 1800),
         ]
+    if settings.test_mode:
+        jobs.append(PeriodicJob("samples_ingest", "app.workers.jobs.clips.ingest_samples_job", 300))
     return tuple(jobs)
 
 
