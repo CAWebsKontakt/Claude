@@ -26,6 +26,7 @@ from app.web.routes import (
     health,
     highlights,
     media,
+    metrics,
     oauth,
     publishing,
     streamers,
@@ -46,6 +47,14 @@ def _wants_json(request: Request) -> bool:
     return request.url.path.startswith(("/api/", "/webhooks/", "/healthz", "/readyz")) or (
         "application/json" in accept and "text/html" not in accept
     )
+
+
+def _oauth_form_targets(settings: Settings) -> tuple[str, ...]:
+    """Origin der TikTok-Anmeldeseite – Ziel der Weiterleitung nach „TikTok-Konto verbinden“."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(settings.tiktok_auth_url)
+    return (f"{parts.scheme}://{parts.netloc}",) if settings.tiktok_configured and parts.netloc else ()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -79,7 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         same_site="lax",
         https_only=settings.session_cookie_secure,
     )
-    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware, form_action_origins=_oauth_form_targets(settings))
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -95,6 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         users,
         system,
         media,
+        metrics,
         oauth,
         webhooks,
     ):

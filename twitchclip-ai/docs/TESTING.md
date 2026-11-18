@@ -43,6 +43,7 @@ docker compose --profile test run --rm --build test
 | `test_analysis.py` | Ton-Ausbrüche, Sprachsignale, Fensterwahl, Bewertung mit Umverteilung, Bild-Hashes, Facecam-Erkennung, Chat-Zähler ohne Texte, Chat-Spitzen als Kandidaten, Chat-Abo, Auswahl der besten N mit Schwelle und Tageslimit, Analyse echter FFmpeg-Testvideos, Duplikat gleicher VOD-Moment |
 | `test_tiktok.py` | Stückregeln der Content Posting API, PKCE (S256), kompletter OAuth-Ablauf über HTTP inkl. verschlüsselter Tokens, falscher/abgelaufener State, Rollen, Fehlerzuordnung (401/429/5xx/Fehlercodes), `Content-Range` je Stück, Token-Erneuerung und -Sperre, Trennen mit Widerruf, Creator-Info |
 | `test_publishing.py` | Warteschlange nur mit Rechten und fertigem Video, alle Freigabe-Pflichtangaben und UX-Regeln, Direct Post nur mit Schalter + Scope, Testmodus nur Export, Videolänge, ZIP-Export, Direct Post und Inbox Ende-zu-Ende, Fehlererklärung + erneute Prüfung, Rechteentzug vor Upload, nie doppelt initialisieren, Rate-Limit, Wiederaufnahme verlorener Jobs, Dashboard ohne Voreinstellungen |
+| `test_operations.py` | Alarme (System + fachlich: Twitch-OAuth, auslaufende Erlaubnis, TikTok-Konto, fehlgeschlagene Uploads, Freigabestau), einmalige Meldung + Entwarnung, Discord/Slack/Klartext, Zustellfehler, `/metrics` nur mit Token, eindeutige Selbsttest-Videos, kompletter Selbsttest mit echtem FFmpeg, CLI |
 | `test_rendering.py` | Layout-Wahl und Ausschnitte innerhalb der Quelle, Untertitel-Zeilen/Karaoke/Überschrift, SRT, Titel/Beschreibung/max. 5 Hashtags, echtes Rendering beider Layouts (1080×1920, H.264/AAC, 30 fps), Aufräumen alter Fassungen, Schutz von Fassungen in der Warteschlange, Rechteprüfung, Dashboard-Bearbeitung, automatischer Schnitt nach der Auswahl |
 
 ## Phase 1 – Abnahme auf dem VPS
@@ -278,6 +279,54 @@ Prüfen im Dashboard: Prüfseite zeigt Konto-Avatar/-Name, Sichtbarkeit ist **ni
 Kommentare/Duett/Stitch sind aus, „Inhalt kommerziell kennzeichnen“ blendet „Your brand“/„Branded content“
 ein, bei „Branded content“ ist „Nur ich“ gesperrt und der Einwilligungstext wechselt. Ohne beide
 Bestätigungen wird nicht freigegeben. Ein Betrachter-Konto sieht kein Freigabeformular.
+
+## Phase 7 – Abnahme auf dem VPS (Produktionsbetrieb)
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git am /pfad/TwitchClip-Phase-7.patch && docker compose up -d --build
+docker compose --profile test run --rm --build test                       # alle Tests bestanden
+docker compose ps                                                         # alle Dienste running/healthy
+
+# 1) Härtung: schreibgeschützt, ohne Capabilities, als Benutzer app
+for c in web worker worker-media scheduler; do docker inspect twitchclip-$c-1 \
+  --format "$c ro={{.HostConfig.ReadonlyRootfs}} caps={{.HostConfig.CapDrop}} pids={{.HostConfig.PidsLimit}} user={{.Config.User}}"; done
+docker compose exec web sh -c 'touch /app/x; touch /tmp/ok && touch /data/ok && echo schreiben-ok'
+#   erwartet: ro=true caps=[ALL] user=app; „/app/x: Read-only file system“, dann schreiben-ok
+
+# 2) Gesamter Ablauf im Testmodus (synthetische Videos → Analyse → Schnitt → Freigabe → ZIP)
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli selftest               # SELBSTTEST BESTANDEN (2–5 min)
+docker compose exec worker-media python -m app.cli selftest --no-transcribe   # schneller, ohne Whisper
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d
+
+# 3) Alarmierung: Test, Ausfall simulieren, Entwarnung
+docker compose exec worker python -m app.cli test-alert
+docker compose stop scheduler && sleep 200
+docker compose exec worker python -c "from app.workers.jobs.maintenance import alerts_job; print(alerts_job())"
+#   → Meldung „Scheduler sendet keinen Herzschlag“ am Webhook
+docker compose start scheduler && sleep 15
+docker compose exec worker python -c "from app.workers.jobs.maintenance import alerts_job; print(alerts_job())"
+#   → „behoben: 1 Meldung(en)“
+bash scripts/healthcheck.sh; echo "exit=$?"                               # 0 = alles in Ordnung
+
+# 4) Metriken (falls METRICS_TOKEN gesetzt)
+TOKEN=$(grep ^METRICS_TOKEN= .env | cut -d= -f2)
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/metrics                       # 401
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/metrics | grep -E '^tcai_(workers|database_up|redis_up|scheduler)'
+
+# 5) Verzögerte Jobs nach Neustart (Regression): Statusabfragen/Wiederholungen laufen sofort weiter
+docker compose restart worker scheduler && sleep 20
+docker compose exec worker python -c "
+from app.redis_client import get_redis; r = get_redis()
+print({k.decode(): v.decode() for k, v in ((k, r.get(k)) for k in r.keys('rq:scheduler-lock:*'))})"
+#   erwartet: Sperren für default/media/publish vorhanden
+
+# 6) Reboot-Test
+sudo reboot   # danach: docker compose ps, curl -fsS http://127.0.0.1:8000/readyz
+```
+
+Sicherheitsprüfung und Befehle zur Kontrolle der Härtung: `docs/SECURITY.md`.
 
 ## Lokale Entwicklung ohne Docker
 

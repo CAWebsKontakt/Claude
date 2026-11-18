@@ -41,6 +41,7 @@ INIT_RETRY_DELAYS = (60, 300, 900)
 UPLOAD_ATTEMPTS = 3
 STATUS_GIVE_UP = timedelta(hours=48)
 STALE_CLAIM = timedelta(minutes=30)
+MIN_CHECK_GAP = timedelta(seconds=10)
 
 
 def _http() -> httpx.Client:
@@ -58,12 +59,14 @@ def schedule_publish(job_id: int, *, delay_seconds: float | None = None, run: st
     )
 
 
-def schedule_status_check(job_id: int, delay_seconds: float) -> bool:
+def schedule_status_check(job_id: int, delay_seconds: float, *, seq: int | None = None) -> bool:
+    """seq: laufende Nummer der Folgeabfrage. Pflicht, wenn eine Abfrage die nächste plant – sonst hätte
+    die neue dieselbe Job-ID wie die gerade laufende und würde von enqueue_unique verworfen."""
     return safe_enqueue(
         QUEUE_PUBLISH,
         f"{JOBS}.check_status_job",
         job_id,
-        job_id=make_job_id("tiktok-status", job_id),
+        job_id=make_job_id("tiktok-status", job_id, *([seq] if seq is not None else [])),
         timeout=120,
         delay_seconds=delay_seconds,
     )
@@ -181,7 +184,7 @@ def publish_job(job_id: int) -> dict:
             publishing._fail(db, job, f"Upload abgebrochen: {last_error}. Erneut vorbereiten und freigeben.")
             return {"error": "upload"}
 
-        schedule_status_check(job.id, publishing.STATUS_CHECK_DELAYS[0])
+        schedule_status_check(job.id, publishing.STATUS_CHECK_DELAYS[0], seq=1)
         return {"publish_id": job.publish_id, "status": job.status}
 
 
@@ -193,6 +196,10 @@ def check_status_job(job_id: int) -> dict:
             return {"skipped": "kein publish_id"}
         if job.status not in (PublishStatus.UPLOADING, PublishStatus.PROCESSING):
             return {"skipped": job.status}
+        if job.last_checked_at and utcnow() - job.last_checked_at < MIN_CHECK_GAP:
+            # Eine zweite Abfragekette (z. B. durch den Abgleich) endet hier – es bleibt genau eine.
+            return {"skipped": "gerade geprüft"}
+        seq = int(utcnow().timestamp())
         account = db.get(TikTokAccount, job.tiktok_account_id) if job.tiktok_account_id else None
         if account is None:
             publishing._fail(db, job, "Das TikTok-Konto wurde entfernt – Status nicht mehr abrufbar.")
@@ -202,7 +209,7 @@ def check_status_job(job_id: int) -> dict:
                 status = tiktok_accounts.client_for(db, settings, http, account).fetch_status(job.publish_id)
         except TikTokRateLimitedError as exc:
             job.next_check_at = utcnow() + timedelta(seconds=exc.retry_after + 5)
-            schedule_status_check(job.id, exc.retry_after + 5)
+            schedule_status_check(job.id, exc.retry_after + 5, seq=seq)
             return {"retry": "rate_limited"}
         except TikTokAuthError as exc:
             job.last_checked_at = utcnow()
@@ -220,7 +227,7 @@ def check_status_job(job_id: int) -> dict:
                 return {"error": exc.code}
             delay = next_status_delay(job)
             job.next_check_at = utcnow() + timedelta(seconds=delay)
-            schedule_status_check(job.id, delay)
+            schedule_status_check(job.id, delay, seq=seq)
             return {"retry": exc.code}
 
         if publishing.apply_status(db, job, status, account):
@@ -233,7 +240,7 @@ def check_status_job(job_id: int) -> dict:
         delay = next_status_delay(job)
         job.next_check_at = utcnow() + timedelta(seconds=delay)
         db.flush()
-        schedule_status_check(job.id, delay)
+        schedule_status_check(job.id, delay, seq=seq)
         return {"pending": status.status, "next_in": delay}
 
 

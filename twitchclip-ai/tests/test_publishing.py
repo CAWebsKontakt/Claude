@@ -236,12 +236,17 @@ def test_direct_post_end_to_end(setup, settings, database, db_session, editor, r
         )
         assert upload.calls[0].request.headers["Content-Range"].startswith("bytes 0-")
         assert (
-            f"tiktok-status-{job_id}" in get_queue(QUEUE_PUBLISH, redis).scheduled_job_registry.get_job_ids()
+            f"tiktok-status-{job_id}-1"
+            in get_queue(QUEUE_PUBLISH, redis).scheduled_job_registry.get_job_ids()
         )
 
         assert "pending" in publish_jobs.check_status_job(job_id)
         db_session.expire_all()
-        assert db_session.get(PublishJob, job_id).status == "processing"
+        job = db_session.get(PublishJob, job_id)
+        assert job.status == "processing"
+        assert publish_jobs.check_status_job(job_id) == {"skipped": "gerade geprüft"}  # nur eine Kette
+        job.last_checked_at = utcnow() - timedelta(seconds=20)
+        db_session.commit()
         assert publish_jobs.check_status_job(job_id)["final"] == "published"
     db_session.expire_all()
     job = db_session.get(PublishJob, job_id)
@@ -477,3 +482,22 @@ def test_export_download_requires_login(client, setup, settings, db_session, edi
     assert Path(job.export_path).is_file()
     r = client.get(f"/media/exports/{job.id}.zip", follow_redirects=False)
     assert r.status_code in (303, 401)
+
+
+def test_status_check_reschedules_itself_inside_rq_worker(
+    setup, settings, database, db_session, editor, redis
+):
+    """Regression: Die Folgeabfrage darf nicht dieselbe Job-ID wie die laufende Abfrage haben."""
+    from rq import SimpleWorker
+
+    job_id = _approve(setup, settings, db_session, editor)
+    with respx.mock as mock:
+        _mock_publish(mock, statuses=[{"status": "PROCESSING_UPLOAD"}] * 3)
+        publish_jobs.publish_job(job_id)
+        queue = get_queue(QUEUE_PUBLISH, redis)
+        for registry_id in queue.scheduled_job_registry.get_job_ids():
+            queue.scheduled_job_registry.remove(registry_id)
+        publish_jobs.schedule_status_check(job_id, 0)  # wie Abgleich/Button: Basis-ID
+        SimpleWorker([queue], connection=redis).work(burst=True)
+        follow_ups = queue.scheduled_job_registry.get_job_ids()
+    assert len(follow_ups) == 1 and follow_ups[0].startswith(f"tiktok-status-{job_id}-")

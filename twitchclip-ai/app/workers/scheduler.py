@@ -6,6 +6,7 @@ Mehrere Scheduler-Instanzen sind unkritisch: Jede Ausführung wird per Redis-Loc
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import signal
 import time
@@ -13,11 +14,12 @@ from dataclasses import dataclass
 
 from redis import Redis
 from redis.exceptions import RedisError
+from rq.scheduler import RQScheduler
 
 from app.config import Settings, get_settings
 from app.logging_setup import configure_logging
 from app.redis_client import get_redis
-from app.workers.queues import QUEUE_DEFAULT, enqueue_unique, make_job_id
+from app.workers.queues import ALL_QUEUES, QUEUE_DEFAULT, enqueue_unique, get_queue, make_job_id
 
 logger = logging.getLogger("tcai.scheduler")
 
@@ -40,6 +42,7 @@ PERIODIC_JOBS: tuple[PeriodicJob, ...] = (
     PeriodicJob("storage_cleanup", "app.workers.jobs.maintenance.cleanup_storage_job", 3600),
     PeriodicJob("prune_activity", "app.workers.jobs.maintenance.prune_activity_job", 86400),
 )
+ALERTS_JOB = "app.workers.jobs.maintenance.alerts_job"
 
 TWITCH_JOBS = "app.workers.jobs.twitch"
 
@@ -47,6 +50,7 @@ TWITCH_JOBS = "app.workers.jobs.twitch"
 def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
     """Alle periodischen Jobs für die aktuelle Konfiguration."""
     jobs = list(PERIODIC_JOBS)
+    jobs.append(PeriodicJob("alerts", ALERTS_JOB, settings.alert_check_interval_minutes * 60, timeout=120))
     if settings.twitch_configured and not settings.test_mode:
         jobs += [
             PeriodicJob("twitch_resolve", f"{TWITCH_JOBS}.resolve_streamers_job", 600),
@@ -104,6 +108,30 @@ def tick(redis: Redis, jobs: tuple[PeriodicJob, ...] = PERIODIC_JOBS, now: float
     return enqueued
 
 
+class DelayedJobPromoter:
+    """Reiht fällige verzögerte RQ-Jobs (enqueue_in: Statusabfragen, Wiederholungen) in ihre Queues ein.
+
+    Die Worker starten zwar ebenfalls einen RQ-Scheduler, versuchen die Sperre nach einem Neustart aber nur
+    alle 10 Minuten erneut – hält der beendete Vorgänger-Container sie noch, blieben verzögerte Jobs bis
+    zu ~20 Minuten liegen. Dieser Dienst versucht es bei jedem Tick (5 s); die RQ-Sperre je Queue
+    verhindert doppeltes Einreihen, egal wer sie hält.
+    """
+
+    def __init__(self, redis: Redis) -> None:
+        self.scheduler = RQScheduler([get_queue(name, redis) for name in ALL_QUEUES], connection=redis)
+
+    def tick(self) -> set[str]:
+        locks = self.scheduler.acquire_locks()
+        if locks:
+            self.scheduler.prepare_registries(locks)
+            self.scheduler.enqueue_scheduled_jobs()
+        return locks
+
+    def release(self) -> None:
+        with contextlib.suppress(RedisError):
+            self.scheduler.release_locks()
+
+
 class _Stop:
     requested = False
 
@@ -122,9 +150,11 @@ def run_forever() -> None:
     jobs = build_periodic_jobs(settings)
     logger.info("Scheduler gestartet", extra={"jobs": [j.name for j in jobs]})
     redis = get_redis()
+    promoter = DelayedJobPromoter(redis)
     backoff = TICK_SECONDS
     while not stop.requested:
         try:
+            promoter.tick()
             names = tick(redis, jobs)
             if names:
                 logger.info("Periodische Jobs eingereiht", extra={"jobs": names})
@@ -139,6 +169,7 @@ def run_forever() -> None:
         while slept < backoff and not stop.requested:
             time.sleep(0.5)
             slept += 0.5
+    promoter.release()
 
 
 if __name__ == "__main__":

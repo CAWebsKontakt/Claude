@@ -285,10 +285,21 @@ renders). Videos werden nie per Backup gesichert – sie sind reproduzierbar bzw
 * CSRF-Token für jedes Formular; Open-Redirect-Schutz beim Login.
 * Content-Security-Policy ohne Inline-Skripte, `frame-ancestors 'none'`, HSTS (Caddy).
 * OAuth-Tokens nur verschlüsselt in der DB (Fernet, Schlüsselrotation über `rotate-token-key`).
-* Container laufen als unprivilegierter Benutzer, Code ist read-only, `no-new-privileges`.
+* Container laufen als unprivilegierter Benutzer mit schreibgeschütztem Dateisystem (nur `/data` und tmpfs-`/tmp`
+  beschreibbar), `cap_drop: ALL`, `no-new-privileges`, Prozess-/Speicher-/CPU-Limits. Details: `SECURITY.md`.
 * Datenbank/Redis ohne Internetzugang, Web-Port nur an `127.0.0.1` gebunden.
 * EventSub-Webhooks (Phase 2): HMAC-SHA256-Prüfung, Zeitstempel ≤ 10 min, Duplikatschutz über Message-ID.
 * Datenschutz: Chat nur als anonyme Zählwerte; Aktivitätsprotokoll mit Aufbewahrungsfrist.
+
+### Betrieb (Phase 7)
+
+| Baustein | Aufgabe |
+|---|---|
+| `alerts` (alle 5 min) | prüft Worker, Scheduler, Queues, Speicher, Twitch-/TikTok-Autorisierungen, auslaufende Erlaubnisse, fehlgeschlagene Uploads/Downloads, Freigabestau; meldet neue Probleme einmalig (Wiederholung nach `ALERT_REPEAT_HOURS`) und Entwarnungen an `ALERT_WEBHOOK_URL` |
+| `scripts/healthcheck.sh` (Cron) | Außenprüfung: Container, `/readyz`, Plattenplatz, fehlgeschlagene Jobs – meldet auch, wenn der Scheduler selbst ausfällt |
+| `/metrics` | Prometheus-Format mit Bearer-Token: Queues, Worker, Herzschlag, Speicher, Streamer, Highlights, Aufträge, Alarme |
+| `selftest` (CLI) | kompletter Durchlauf im Testmodus mit frischen synthetischen Videos bis zum ZIP-Export |
+| Scheduler-Dienst | reiht periodische Jobs ein **und** fällige verzögerte RQ-Jobs (Wiederholungen, Statusabfragen) – auch direkt nach einem Neustart |
 
 ## 8. Projektstruktur
 

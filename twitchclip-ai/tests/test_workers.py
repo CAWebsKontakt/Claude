@@ -72,3 +72,25 @@ def test_job_id_validation(redis):
     assert make_job_id("vod", 123, "a:b/c") == "vod-123-a_b_c"
     with pytest.raises(ValueError):
         enqueue_unique(QUEUE_DEFAULT, "tests.test_workers._noop", job_id="bad:id", connection=redis)
+
+
+def test_delayed_jobs_are_promoted_even_with_stale_worker_lock(redis):
+    """Nach einem Neustart hält der alte Worker die RQ-Sperre noch – der Scheduler-Dienst übernimmt danach."""
+    from datetime import timedelta
+
+    from rq.scheduler import RQScheduler
+
+    from app.workers.queues import QUEUE_PUBLISH, get_queue
+    from app.workers.scheduler import DelayedJobPromoter
+
+    queue = get_queue(QUEUE_PUBLISH, redis)
+    queue.enqueue_in(timedelta(seconds=-1), "builtins.print", "fällig", job_id="faellig-1")
+    redis.set(RQScheduler.get_locking_key(QUEUE_PUBLISH), "alter-worker", ex=60)  # veraltete Sperre
+    promoter = DelayedJobPromoter(redis)
+    assert QUEUE_PUBLISH not in promoter.tick()
+    assert "faellig-1" not in queue.job_ids  # keine Doppelung, solange ein anderer die Sperre hält
+    redis.delete(RQScheduler.get_locking_key(QUEUE_PUBLISH))  # Sperre abgelaufen
+    assert QUEUE_PUBLISH in promoter.tick()
+    assert "faellig-1" in queue.job_ids and not queue.scheduled_job_registry.get_job_ids()
+    promoter.release()
+    assert redis.get(RQScheduler.get_locking_key(QUEUE_PUBLISH)) is None

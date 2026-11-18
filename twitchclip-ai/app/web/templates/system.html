@@ -9,6 +9,16 @@
   {% endif %}
 </div>
 
+<section class="card {{ 'card-danger' if alerts|selectattr('level', 'equalto', 'error')|list else ('card-warn' if alerts else '') }}">
+  <div class="card-head"><h2>Alarme</h2>
+    {% if current_user.is_admin %}<form method="post" action="/system/alerts">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Jetzt prüfen</button></form>{% endif %}</div>
+  {% if alerts %}
+  <ul class="bullets">{% for a in alerts %}<li class="{{ 'text-bad' if a.level == 'error' else '' }}">{{ a.message }}</li>{% endfor %}</ul>
+  {% else %}<p class="muted small">Keine aktiven Alarme.</p>{% endif %}
+  <p class="muted small">Letzte Prüfung: {{ alerts_last_at | localtime if alerts_last_at else "noch keine" }} ·
+    Benachrichtigung: {{ "an Webhook" if settings.alert_webhook_url else "aus (ALERT_WEBHOOK_URL nicht gesetzt)" }}</p>
+</section>
+
 {% if status.warnings %}
 <section class="card card-warn">
   <h2>Hinweise</h2>

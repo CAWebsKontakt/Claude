@@ -178,7 +178,16 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
 | Fehlerprotokoll | *Aktivität & Fehler* mit Filter `Stufe = error`; Übersicht zeigt „Fehler (24 h)“ |
 | Ressourcen | `docker stats --no-stream` |
 | Speicher | `df -h /` und `docker system df` |
-| Alarm | `scripts/healthcheck.sh` per Cron (Abschnitt 4 in INSTALL.md), Alarm z. B. per <https://ntfy.sh> aufs Handy |
+| Alarme | Dashboard → *System* → „Alarme“ (Ergebnis der Prüfung alle 5 min, *Jetzt prüfen*); `python -m app.cli check-alerts` |
+| Benachrichtigung | `ALERT_WEBHOOK_URL` in der `.env` (Discord, Slack oder Klartext, z. B. <https://ntfy.sh> aufs Handy); Test: `python -m app.cli test-alert` |
+| Außenprüfung | `scripts/healthcheck.sh` per Cron (INSTALL.md Abschnitt 4) – meldet auch Ausfälle des Schedulers/der Container |
+| Metriken | `METRICS_TOKEN` setzen → `curl -H "Authorization: Bearer $TOKEN" https://<domain>/metrics` (Prometheus/Grafana) |
+| Selbsttest | `TEST_MODE=true`, dann `docker compose exec worker-media python -m app.cli selftest` |
+
+Gemeldet werden: kein Worker, Scheduler ohne Herzschlag, viele fehlgeschlagene/wartende Jobs, Speicher knapp,
+Twitch-Autorisierung fehlt/widerrufen, Erlaubnis läuft in ≤ 7 Tagen ab, TikTok-Konto muss neu verbunden werden,
+TikTok-Auftrag fehlgeschlagen, Videos warten > 3 Tage auf Freigabe, ≥ 5 fehlgeschlagene Clip-Aufträge in 24 h.
+Jede Meldung kommt einmal (Wiederholung nach `ALERT_REPEAT_HOURS`), behobene Probleme werden entwarnt.
 
 Externe Uptime-Überwachung (z. B. UptimeRobot, Healthchecks.io, Uptime Kuma) auf
 `https://<domain>/readyz` einrichten – der Endpunkt liefert HTTP 503, wenn Datenbank oder Redis ausfallen, und

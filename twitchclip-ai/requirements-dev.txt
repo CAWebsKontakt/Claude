@@ -2,5 +2,7 @@
 pytest==9.2.0
 pytest-cov==7.1.0
 fakeredis==2.40.0
+# Lua-Unterstützung für fakeredis (RQ-Scheduler-Sperren in Tests)
+lupa==2.6
 respx==0.23.1
 ruff==0.17.5

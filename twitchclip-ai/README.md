@@ -27,6 +27,14 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 
 → `https://clips.ihre-domain.de`
 
+Funktionsprüfung ohne Twitch/TikTok (Testmodus, synthetische Videos, kompletter Durchlauf bis zum Export):
+
+```bash
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli selftest      # endet mit „SELBSTTEST BESTANDEN“
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d
+```
+
 ## Dokumentation
 
 | Dokument | Inhalt |
@@ -37,6 +45,7 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 | [docs/API_REGISTRATION.md](docs/API_REGISTRATION.md) | Twitch- und TikTok-App registrieren, Review/Audit |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Streamer hinzufügen, Benutzer, Überwachung, Backup, Fehlerbehebung |
 | [docs/TESTING.md](docs/TESTING.md) | Automatisierte Tests und Abnahmebefehle je Phase |
+| [docs/SECURITY.md](docs/SECURITY.md) | Sicherheitsprüfung, Härtung, verbleibende Risiken |
 
 ## Entwicklungsstand
 
@@ -48,7 +57,7 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 | 4 | KI-Highlight-Erkennung (Whisper, Audio, OpenCV, Chat, Duplikate, Score 0–100) | ✅ fertig |
 | 5 | Vertikaler Schnitt, Facecam-Layout, Untertitel, Titel/Beschreibung/Hashtags | ✅ fertig |
 | 6 | TikTok-OAuth (PKCE), Creator-Info, Freigabe nach UX-Richtlinien, Upload in Stücken, Status, Export | ✅ fertig |
-| 7 | Testmodus mit Beispieldateien, End-to-End-Tests, Produktionshärtung | geplant |
+| 7 | Selbsttest (End-to-End), Alarmierung, Prometheus-Metriken, Container-Härtung, Sicherheitsprüfung | ✅ fertig |
 
 ## Lizenz und Verantwortung
 

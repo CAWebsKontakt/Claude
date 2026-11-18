@@ -2,11 +2,17 @@
 # Externe Betriebsüberwachung per Cron. Prüft Container, /readyz, freien Speicher und
 # fehlgeschlagene Jobs. Optional Alarm an einen Webhook (ntfy, Discord, Slack, Telegram-Bot …).
 #
-#   */5 * * * * cd /opt/twitchclip/twitchclip-ai && ALERT_WEBHOOK_URL=https://ntfy.sh/mein-geheimes-topic bash scripts/healthcheck.sh >> backups/health.log 2>&1
+#   */5 * * * * cd /opt/twitchclip/twitchclip-ai && bash scripts/healthcheck.sh >> backups/health.log 2>&1
+# (ALERT_WEBHOOK_URL aus der Umgebung oder der .env). Ergänzt die Alarme der Anwendung: meldet auch, wenn
+# Container, Scheduler oder Redis selbst ausgefallen sind.
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 PROBLEMS=()
+# Ohne Umgebungsvariable den Webhook aus der .env verwenden (gleiches Ziel wie die Alarme der Anwendung)
+if [[ -z "${ALERT_WEBHOOK_URL:-}" && -f .env ]]; then
+  ALERT_WEBHOOK_URL="$(grep -E '^ALERT_WEBHOOK_URL=' .env | tail -1 | cut -d= -f2- | tr -d '"')"
+fi
 
 for svc in web worker worker-media scheduler postgres redis caddy; do
   state="$(docker compose ps --format '{{.Service}} {{.State}}' 2>/dev/null | awk -v s="$svc" '$1==s {print $2}')"

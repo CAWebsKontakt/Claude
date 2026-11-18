@@ -37,6 +37,7 @@ def test_scheduler_includes_twitch_jobs_only_when_configured(settings, twitch_se
         "prune_activity",
         "analysis_pending",
         "tiktok_sync_publish",  # Phase 6: freigegebene Aufträge immer wieder aufnehmen
+        "alerts",  # Phase 7: Alarmierung
     }
     names = {j.name for j in scheduler.build_periodic_jobs(twitch_settings)}
     assert {"twitch_poll_live", "twitch_eventsub_sync", "twitch_discover_clips", "twitch_resolve"} <= names

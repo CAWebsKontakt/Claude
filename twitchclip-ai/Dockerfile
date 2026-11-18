@@ -34,7 +34,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     TZ=Europe/Berlin \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache \
+    HF_HOME=/data/models/huggingface
 
 # FFmpeg: Audioanalyse und Videoschnitt (inkl. libass für Untertitel).
 # fonts-dejavu-core: Schrift für eingebrannte Untertitel/Überschriften (libass braucht installierte Fonts).

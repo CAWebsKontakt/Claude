@@ -42,3 +42,15 @@ def prune_activity_job() -> int:
         if removed:
             logger.info("Aktivitätsprotokoll bereinigt", extra={"removed": removed})
     return removed
+
+
+def alerts_job() -> dict:
+    """Alle ALERT_CHECK_INTERVAL_MINUTES: Probleme erkennen und (gedrosselt) melden."""
+    import httpx
+
+    from app.redis_client import get_redis
+    from app.services.alerts import run_alerts
+
+    settings = get_settings()
+    with session_scope() as db, httpx.Client(timeout=10) as http:
+        return run_alerts(settings, db, get_redis(), http)

@@ -85,10 +85,27 @@ crontab -e
 # Datenbank-Backup täglich 03:15, 14 Tage Aufbewahrung
 15 3 * * * cd /opt/twitchclip/twitchclip-ai && bash scripts/backup.sh >> backups/backup.log 2>&1
 # Gesundheitsprüfung alle 5 Minuten (Alarm per ntfy/Discord/Slack-Webhook optional)
-*/5 * * * * cd /opt/twitchclip/twitchclip-ai && ALERT_WEBHOOK_URL=https://ntfy.sh/IHR-GEHEIMES-TOPIC bash scripts/healthcheck.sh >> backups/health.log 2>&1
+# (Webhook aus ALERT_WEBHOOK_URL in der .env)
+*/5 * * * * cd /opt/twitchclip/twitchclip-ai && bash scripts/healthcheck.sh >> backups/health.log 2>&1
 ```
 
 Backups zusätzlich regelmäßig vom Server herunterkopieren (z. B. `rsync`/`restic` auf einen anderen Speicher).
+
+## 4a. Alarmierung und Abnahme
+
+```bash
+# Alarm-Ziel (Beispiel ntfy: App installieren, Topic abonnieren – langes zufälliges Topic wählen)
+echo "ALERT_WEBHOOK_URL=https://ntfy.sh/twitchclip-$(openssl rand -hex 12)" >> .env
+echo "METRICS_TOKEN=$(openssl rand -hex 32)" >> .env          # optional: /metrics
+docker compose up -d
+docker compose exec worker python -m app.cli test-alert        # Nachricht kommt aufs Handy
+docker compose exec worker python -m app.cli check-alerts      # „Keine Probleme gefunden“
+
+# Gesamtabnahme im Testmodus (ohne Twitch/TikTok)
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli selftest    # SELBSTTEST BESTANDEN
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d
+```
 
 ## 5. Reboot-Test
 

@@ -5,22 +5,33 @@ from __future__ import annotations
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-CONTENT_SECURITY_POLICY = "; ".join(
-    [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self'",
-        "img-src 'self' data: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv "
-        "https://*.tiktokcdn.com https://*.tiktokcdn-us.com https://*.tiktokcdn-eu.com",
-        "media-src 'self'",
-        "frame-src https://clips.twitch.tv https://player.twitch.tv",
-        "connect-src 'self'",
-        "form-action 'self'",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        "object-src 'none'",
-    ]
-)
+
+def build_csp(form_action_origins: tuple[str, ...] = ()) -> str:
+    """CSP. form_action_origins: Ziele, zu denen ein Formular-POST weiterleiten darf (OAuth-Start).
+
+    Browser wenden form-action auch auf Weiterleitungen nach dem Absenden an – ohne diese Ausnahme
+    würde z. B. „TikTok-Konto verbinden“ (POST → 303 zu tiktok.com) blockiert.
+    """
+    form_action = " ".join(("'self'", *form_action_origins))
+    return "; ".join(
+        [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self'",
+            "img-src 'self' data: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv "
+            "https://*.tiktokcdn.com https://*.tiktokcdn-us.com https://*.tiktokcdn-eu.com",
+            "media-src 'self'",
+            "frame-src https://clips.twitch.tv https://player.twitch.tv",
+            "connect-src 'self'",
+            f"form-action {form_action}",
+            "frame-ancestors 'none'",
+            "base-uri 'self'",
+            "object-src 'none'",
+        ]
+    )
+
+
+CONTENT_SECURITY_POLICY = build_csp()
 
 STATIC_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -33,8 +44,9 @@ STATIC_HEADERS = {
 
 
 class SecurityHeadersMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, form_action_origins: tuple[str, ...] = ()) -> None:
         self.app = app
+        self.headers = {**STATIC_HEADERS, "Content-Security-Policy": build_csp(form_action_origins)}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -44,7 +56,7 @@ class SecurityHeadersMiddleware:
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                for key, value in STATIC_HEADERS.items():
+                for key, value in self.headers.items():
                     if key not in headers:
                         headers[key] = value
                 content_type = headers.get("content-type", "")

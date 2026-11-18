@@ -129,6 +129,14 @@ class Settings(BaseSettings):
     subtitles_enabled: bool = True
     subtitles_uppercase: bool = False
 
+    # --- Betrieb: Alarmierung und Metriken (Phase 7) ----------------------
+    # Webhook für Alarme: Discord/Slack-Webhook oder beliebiger Klartext-Endpunkt (z. B. https://ntfy.sh/<topic>)
+    alert_webhook_url: str = ""
+    alert_check_interval_minutes: int = Field(default=5, ge=1, le=60)
+    alert_repeat_hours: int = Field(default=12, ge=1, le=168)
+    # Prometheus-Endpunkt /metrics nur mit gesetztem Token (Authorization: Bearer <token>)
+    metrics_token: SecretStr = Field(default=SecretStr(""))
+
     # --- Testmodus -------------------------------------------------------
     # Verarbeitet nur lokale Beispieldateien, ruft keine externen APIs auf.
     test_mode: bool = False
@@ -325,6 +333,12 @@ class Settings(BaseSettings):
             "RENDER_PRESET": self.render_preset,
             "RENDER_CRF": self.render_crf,
             "SUBTITLES_ENABLED": self.subtitles_enabled,
+            "ALERT_WEBHOOK_URL": "gesetzt" if self.alert_webhook_url else "nicht gesetzt",
+            "ALERT_CHECK_INTERVAL_MINUTES": self.alert_check_interval_minutes,
+            "ALERT_REPEAT_HOURS": self.alert_repeat_hours,
+            "METRICS_TOKEN": "gesetzt"
+            if self.metrics_token.get_secret_value()
+            else "nicht gesetzt (/metrics aus)",
             "TEST_MODE": self.test_mode,
         }
 

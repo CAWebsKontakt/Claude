@@ -29,8 +29,10 @@ def _audio_expression(duration: int, variant: int) -> str:
 
 
 def generate_samples(
-    settings: Settings, *, count: int = 3, duration: int = 60, overwrite: bool = False
+    settings: Settings, *, count: int = 3, duration: int = 60, overwrite: bool = False, tag: str | None = None
 ) -> list[Path]:
+    """tag: eindeutiger Namensbestandteil (Selbsttest) – Kennung landet auch in den Metadaten,
+    damit sich die Dateien per SHA-256 unterscheiden."""
     if shutil.which("ffmpeg") is None:
         raise SampleGenerationError("ffmpeg ist nicht installiert")
     if not 10 <= duration <= 600:
@@ -38,7 +40,7 @@ def generate_samples(
     settings.samples_dir.mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
     for index in range(count):
-        target = settings.samples_dir / f"beispiel-{index + 1:02d}-{duration}s.mp4"
+        target = settings.samples_dir / f"{tag or 'beispiel'}-{index + 1:02d}-{duration}s.mp4"
         if target.exists() and not overwrite:
             continue
         command = [
@@ -51,6 +53,7 @@ def generate_samples(
             "-t", str(duration),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+            "-metadata", f"comment=TwitchClip AI {tag or 'beispiel'}",
             "-movflags", "+faststart",
             str(target),
         ]  # fmt: skip

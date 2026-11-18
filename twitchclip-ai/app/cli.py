@@ -254,6 +254,58 @@ def cmd_ingest_samples(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_selftest(args: argparse.Namespace) -> int:
+    """Kompletter Durchlauf im Testmodus: Beispielvideos → Analyse → Schnitt → Freigabe → Export."""
+    from app.config import get_settings
+    from app.services.selftest import run_selftest
+
+    def report(step) -> None:
+        mark = "✓" if step.ok else "✗"
+        print(f"{mark} {step.name:<26} {step.seconds:>6.1f} s  {step.detail}", flush=True)
+
+    result = run_selftest(
+        get_settings(), transcribe=not args.no_transcribe, duration=args.duration, report=report
+    )
+    if result.ok:
+        print(f"\nSELBSTTEST BESTANDEN – Highlight #{result.highlight_id}, Export-Auftrag #{result.job_id}")
+        return 0
+    print("\nSELBSTTEST FEHLGESCHLAGEN")
+    return 1
+
+
+def cmd_test_alert(_args: argparse.Namespace) -> int:
+    """Testnachricht an ALERT_WEBHOOK_URL senden."""
+    import httpx
+
+    from app.config import get_settings
+    from app.services.alerts import send
+
+    settings = get_settings()
+    if not settings.alert_webhook_url:
+        _print_err("ALERT_WEBHOOK_URL ist nicht gesetzt.")
+        return 1
+    with httpx.Client(timeout=10) as http:
+        ok = send(settings, http, "TwitchClip AI: Testalarm – die Alarmierung funktioniert.")
+    print("✓ Testalarm gesendet" if ok else "✗ Senden fehlgeschlagen (URL/Netzwerk prüfen)")
+    return 0 if ok else 1
+
+
+def cmd_check_alerts(_args: argparse.Namespace) -> int:
+    """Aktuelle Probleme anzeigen (ohne zu senden)."""
+    from app.config import get_settings
+    from app.db import session_scope
+    from app.redis_client import get_redis
+    from app.services.alerts import collect_alerts
+
+    with session_scope() as db:
+        found = collect_alerts(get_settings(), db, get_redis())
+    for alert in found:
+        print(f"{'FEHLER ' if alert.level == 'error' else 'WARNUNG'} {alert.message}")
+    if not found:
+        print("✓ Keine Probleme gefunden")
+    return 1 if any(a.level == "error" for a in found) else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli", description="TwitchClip AI – Verwaltung")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -296,6 +348,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("ingest-samples", help="Beispieldateien übernehmen (TEST_MODE=true)").set_defaults(
         func=cmd_ingest_samples
     )
+
+    p = sub.add_parser("selftest", help="End-to-End-Selbsttest im Testmodus (TEST_MODE=true)")
+    p.add_argument("--no-transcribe", action="store_true", help="ohne Whisper (schneller)")
+    p.add_argument("--duration", type=int, default=40, help="Länge der Testvideos in Sekunden")
+    p.set_defaults(func=cmd_selftest)
+
+    sub.add_parser("test-alert", help="Testnachricht an ALERT_WEBHOOK_URL senden").set_defaults(
+        func=cmd_test_alert
+    )
+    sub.add_parser("check-alerts", help="Aktuelle Probleme anzeigen").set_defaults(func=cmd_check_alerts)
 
     sub.add_parser("rotate-token-key", help="Tokens mit neuem Schlüssel verschlüsseln").set_defaults(
         func=cmd_rotate_token_key

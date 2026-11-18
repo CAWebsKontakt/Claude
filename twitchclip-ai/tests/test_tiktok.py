@@ -233,3 +233,18 @@ def test_refresh_creator_info_route(admin_client, settings, monkeypatch, db_sess
         post_form(admin_client, f"/tiktok/{acc.id}/refresh", csrf_page="/tiktok")
     db_session.expire_all()
     assert db_session.get(TikTokAccount, acc.id).creator_info["privacy_level_options"] == ["SELF_ONLY"]
+
+
+def test_csp_allows_redirect_to_tiktok_login_only_when_configured(settings, database, redis, monkeypatch):
+    """Browser prüfen form-action auch bei der Weiterleitung nach dem POST (Konto verbinden)."""
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    def csp() -> str:
+        with TestClient(create_app(settings), base_url="https://testserver") as test_client:
+            return test_client.get("/login").headers["content-security-policy"]
+
+    assert "form-action 'self';" in csp()
+    configure(settings, monkeypatch)
+    assert "form-action 'self' https://www.tiktok.com;" in csp()
