@@ -374,3 +374,25 @@ def test_retry_after_reauthorization(admin_client, db_session, twitch_settings, 
     assert row.status == "waiting" and row.attempts == 0 and row.error is None
     jobs = get_queue(QUEUE_MEDIA, redis).job_ids
     assert any(j.startswith(f"clips-download-{request.id}-r") and j.endswith("-1") for j in jobs)
+
+
+def test_retry_skipped_analysis(admin_client, db_session, twitch_settings, redis, settings):
+    s = factories.authorized_streamer(db_session, twitch_settings)
+    path = twitch_settings.downloads_dir / "1" / "clip-9.mp4"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(VIDEO_BYTES)
+    request = ClipRequest(
+        streamer_id=s.id,
+        source="viewer_clip",
+        dedup_key="viewer:ana",
+        status="downloaded",
+        file_path=str(path),
+        error="Analyse: Twitch-Autorisierung fehlt",
+    )
+    db_session.add(request)
+    db_session.commit()
+    assert "Erneut versuchen" in admin_client.get(f"/streamers/{s.id}").text
+    post_form(admin_client, f"/streamers/{s.id}/clip-requests/{request.id}/retry")
+    db_session.expire_all()
+    assert db_session.get(ClipRequest, request.id).error is None
+    assert get_queue(QUEUE_MEDIA, redis).fetch_job(f"analyze-{request.id}") is not None

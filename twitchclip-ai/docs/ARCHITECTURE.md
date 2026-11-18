@@ -152,6 +152,31 @@ Je heruntergeladenem Clip (Media-Worker, ein Job gleichzeitig, ca. 3 s Rechenzei
 * **Chat-Spitzen** (≥ `CHAT_SPIKE_FACTOR` × Median), die kein Zuschauer-Clip abdeckt, werden als zusätzliche
   Kandidaten per Create Clip From VOD erzeugt.
 
+### Videoschnitt und Untertitel (Phase 5)
+
+```
+ausgewählte Highlights ─► Layout wählen ─► Überschrift/Beschreibung/Hashtags ─► ASS-Untertitel ─► FFmpeg ─► Prüfung ─► Vorschaubild
+```
+
+| Layout | Wann | Aufbau (1080×1920) |
+|---|---|---|
+| `facecam_split` | Facecam erkannt (stabile Gesichtsposition, Phase 4) | Facecam oben (480–760 px hoch, auf das Gesicht zentriert), Gameplay darunter, von der Facecam weg verschoben |
+| `blur_fill` | keine Facecam | Gameplay mittig (760 px hoch, leicht gezoomt), unscharfer Hintergrund, Überschrift im freien Bereich darüber |
+| `vertical` | Quelle bereits hochkant | eingepasst, Ränder unscharf gefüllt |
+
+* **Untertitel:** aus den Whisper-Wort-Zeitstempeln, max. 3 Wörter/22 Zeichen je Zeile, DejaVu Sans Bold 80 px,
+  dicke Kontur, das gesprochene Wort wird gelb (ASS-Karaoke). Zusätzlich als `.srt` zum Herunterladen.
+* **Überschrift:** max. 60 Zeichen; bei `blur_fill` dauerhaft, sonst in den ersten 3,5 s.
+* **Ton:** nur Original-Ton, `loudnorm` auf −14 LUFS / −1,5 dBTP, AAC 160 kbit/s 48 kHz Stereo; ohne Tonspur
+  wird Stille eingefügt. Es wird **keine Musik** hinzugefügt.
+* **Video:** H.264 High (yuv420p, 30 fps, GOP 2 s, `RENDER_PRESET`/`RENDER_CRF`), `+faststart` für sofortiges
+  Abspielen. Jede Ausgabe wird per ffprobe geprüft (1080×1920, H.264, AAC), sonst gilt der Schnitt als
+  fehlgeschlagen.
+* **Texte:** Überschrift aus dem Zuschauer-Clip-Titel oder dem aufregendsten Ausruf im Transkript, Beschreibung
+  mit Quellenangabe (`twitch.tv/<kanal>`), max. 5 Hashtags (Kanal, Spiel, twitch, gaming, Sprache). Bearbeitete
+  Texte werden nie automatisch überschrieben.
+* Ältere Fassungen werden beim Neuschnitt gelöscht – außer sie stecken bereits in der TikTok-Warteschlange.
+
 ## 4. Datenmodell (Migration `0001`)
 
 | Tabelle | Inhalt / wichtige Eindeutigkeiten |
@@ -260,17 +285,17 @@ twitchclip-ai/
     ├── services/                 ✓ activity, users, streamers (Rechte), permissions, storage, system,
     │                               ✓ twitch_monitor, eventsub_handler, clip_discovery, clip_scoring,
     │                               ✓ twitch_authorization, clip_processing, media_probe, samples, processing_keys,
-    │                               ✓ highlight_analysis (Analyse, Duplikate, Auswahl), chat_stats
+    │                               ✓ highlight_analysis (Analyse, Duplikate, Auswahl), chat_stats, rendering
     ├── workers/                  ✓ queues, worker, scheduler, jobs/maintenance
     │   └── jobs/twitch.py        ✓  Streamer auflösen, Live-Status, Clip-Suche, EventSub-Abgleich, VOD-Zuordnung
     │   └── jobs/clips.py         ✓  Kandidaten planen, Clip aus VOD erzeugen, Download, Testmodus-Import
     │   └── jobs/analysis.py      ✓  KI-Analyse, Auswahl je Stream, Chat-Zähler übertragen
-    │   └── jobs/render.py        5  Schnitt, Untertitel, Metadaten
+    │   └── jobs/render.py        ✓  Schnitt, Untertitel, Metadaten (automatisch nach der Auswahl)
     │   └── jobs/publish.py       6  TikTok-Upload und Statusverfolgung
     ├── integrations/twitch/      ✓  Helix-Client, App-Token, Nutzer-OAuth, EventSub, Rate-Limit
     ├── integrations/tiktok/      6  OAuth (PKCE), Creator-Info, Direct Post / Inbox-Upload, Status
     ├── ai/                       ✓  audio (FFmpeg/numpy), transcribe (faster-whisper), vision (OpenCV), scoring
-    ├── media/                    5  layout (Facecam/Gameplay), subtitles (ASS), render (FFmpeg), metadata
+    ├── media/                    ✓  layout (Facecam/Gameplay), subtitles (ASS/SRT), render (FFmpeg), metadata
     └── web/                      ✓ routes/, templates/, static/ (mobiloptimiert, ohne externe CDNs)
         └── routes/webhooks.py    ✓  EventSub-Endpunkt
         └── routes/oauth.py       ✓  Twitch-Einladung/Zustimmung/Callback (TikTok: Phase 6)

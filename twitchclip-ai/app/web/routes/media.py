@@ -88,3 +88,20 @@ def clip_file(
         raise HTTPException(status_code=404, detail="Clip nicht gefunden")
     path = _safe_file(settings, clip_request.file_path)
     return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/videos/{video_id}/subtitles.srt")
+def subtitles_file(
+    video_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    video = _video(db, video_id)
+    path = _safe_file(settings, str(Path(video.file_path).with_suffix(".srt")))
+    return FileResponse(
+        path,
+        media_type="application/x-subrip",
+        filename=f"twitchclip-{video.highlight_id}-{video.id}.srt",
+        headers={"Cache-Control": "private, no-store"},
+    )

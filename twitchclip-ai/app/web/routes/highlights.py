@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -79,11 +81,93 @@ def highlight_detail(
         .where(PublishJob.highlight_id == highlight.id)
         .order_by(PublishJob.created_at.desc())
     ).all()
+    from app.media.metadata import caption_text
+    from app.services.rendering import LAYOUT_CHOICES, RENDERABLE
+    from app.services.streamers import compute_rights
+
+    video = highlight.current_video
+    has_srt = bool(video and Path(video.file_path).with_suffix(".srt").is_file())
     return render(
         request,
         "highlights/detail.html",
-        {"highlight": highlight, "video": highlight.current_video, "jobs": jobs, "nav": "highlights"},
+        {
+            "highlight": highlight,
+            "video": video,
+            "jobs": jobs,
+            "caption": caption_text(highlight.description or "", highlight.hashtags or []),
+            "layout_choices": LAYOUT_CHOICES,
+            "can_render": highlight.status in RENDERABLE and compute_rights(highlight.streamer).can_process,
+            "has_srt": has_srt,
+            "nav": "highlights",
+        },
     )
+
+
+@router.post("/highlights/{highlight_id}/metadata", dependencies=[Depends(csrf_protect)])
+def edit_metadata(
+    request: Request,
+    highlight_id: int,
+    title: str = Form(""),
+    description: str = Form(""),
+    hashtags: str = Form(""),
+    rerender: str | None = Form(None),
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    from app.services.rendering import RenderingError, update_metadata
+
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight nicht gefunden")
+    try:
+        update_metadata(db, highlight, title=title, description=description, hashtags=hashtags, actor=user)
+        db.commit()
+    except RenderingError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return RedirectResponse(f"/highlights/{highlight_id}", status_code=303)
+    if rerender is not None:
+        return _queue_render(request, highlight, "auto")
+    flash(request, "Texte gespeichert. Die Überschrift im Video ändert sich nach „Neu schneiden“.", "success")
+    return RedirectResponse(f"/highlights/{highlight_id}", status_code=303)
+
+
+def _queue_render(request: Request, highlight: Highlight, layout: str):
+    from app.timeutil import utcnow
+    from app.workers.jobs.render import schedule_render
+
+    if schedule_render(highlight.id, layout, run=f"r{int(utcnow().timestamp())}"):
+        flash(request, "Video wird geschnitten – die Seite in etwa einer Minute neu laden.", "success")
+    else:
+        flash(request, "Konnte nicht eingereiht werden (Redis?).", "error")
+    return RedirectResponse(f"/highlights/{highlight.id}", status_code=303)
+
+
+@router.post("/highlights/{highlight_id}/render", dependencies=[Depends(csrf_protect)])
+def rerender_highlight(
+    request: Request,
+    highlight_id: int,
+    layout: str = Form("auto"),
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+):
+    from app.services.rendering import LAYOUT_CHOICES, RENDERABLE
+    from app.services.streamers import compute_rights
+
+    highlight = db.get(Highlight, highlight_id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight nicht gefunden")
+    if layout not in LAYOUT_CHOICES:
+        layout = "auto"
+    if highlight.status not in RENDERABLE:
+        flash(
+            request, "Dieses Highlight kann in seinem aktuellen Status nicht neu geschnitten werden.", "error"
+        )
+        return RedirectResponse(f"/highlights/{highlight_id}", status_code=303)
+    if not compute_rights(highlight.streamer).can_process:
+        flash(request, "Für diesen Kanal ist keine Verarbeitung erlaubt.", "error")
+        return RedirectResponse(f"/highlights/{highlight_id}", status_code=303)
+    return _queue_render(request, highlight, layout)
 
 
 @router.post("/highlights/{highlight_id}/reject", dependencies=[Depends(csrf_protect)])

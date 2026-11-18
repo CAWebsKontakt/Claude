@@ -112,6 +112,15 @@ class Settings(BaseSettings):
     # Ähnlichkeitsgrenze für Duplikate (Hamming-Abstand der Bild-Hashes, 0–64)
     duplicate_hash_distance: int = Field(default=10, ge=0, le=32)
 
+    # --- Videoschnitt (ab Phase 5) ---------------------------------------
+    # x264-Preset: ultrafast … veryslow (langsamer = kleinere Datei bei gleicher Qualität)
+    render_preset: Literal["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow"] = (
+        "medium"
+    )
+    render_crf: int = Field(default=20, ge=14, le=30)
+    subtitles_enabled: bool = True
+    subtitles_uppercase: bool = False
+
     # --- Testmodus -------------------------------------------------------
     # Verarbeitet nur lokale Beispieldateien, ruft keine externen APIs auf.
     test_mode: bool = False
@@ -303,6 +312,9 @@ class Settings(BaseSettings):
             "CHAT_STATS_ENABLED": self.chat_stats_enabled,
             "CHAT_SPIKE_FACTOR": self.chat_spike_factor,
             "DUPLICATE_HASH_DISTANCE": self.duplicate_hash_distance,
+            "RENDER_PRESET": self.render_preset,
+            "RENDER_CRF": self.render_crf,
+            "SUBTITLES_ENABLED": self.subtitles_enabled,
             "TEST_MODE": self.test_mode,
         }
 

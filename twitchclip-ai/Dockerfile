@@ -36,10 +36,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TZ=Europe/Berlin \
     DATA_DIR=/data
 
-# FFmpeg wird ab Phase 4/5 für Audioanalyse und Videoschnitt benötigt.
+# FFmpeg: Audioanalyse und Videoschnitt (inkl. libass für Untertitel).
+# fonts-dejavu-core: Schrift für eingebrannte Untertitel/Überschriften (libass braucht installierte Fonts).
 # tini: sauberes Signal-Handling (SIGTERM bei docker stop) und Zombie-Reaping.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg tini ca-certificates tzdata \
+ && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core fontconfig tini ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
 
 # Unprivilegierter Benutzer

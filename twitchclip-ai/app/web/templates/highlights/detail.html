@@ -18,7 +18,9 @@
         src="/media/videos/{{ video.id }}.mp4"
         {% if video.thumbnail_path %}poster="/media/thumbnails/{{ video.id }}.jpg"{% endif %}></video>
       <p class="muted small">{{ video.width }}×{{ video.height }} · {{ video.duration | seconds }} · {{ video.size_bytes | filesize }}
-        · <a href="/media/videos/{{ video.id }}/download">Herunterladen</a></p>
+        · Layout: {{ {"facecam_split": "Facecam oben", "blur_fill": "Gameplay mittig", "vertical": "Hochformat"}.get(video.layout, video.layout) }}
+        · <a href="/media/videos/{{ video.id }}/download">MP4 herunterladen</a>
+        {% if has_srt %} · <a href="/media/videos/{{ video.id }}/subtitles.srt">Untertitel (SRT)</a>{% endif %}</p>
     {% elif highlight.clip_request_id %}
       <video class="vertical-video source-video" controls preload="metadata" playsinline
         src="/media/clips/{{ highlight.clip_request_id }}.mp4#t={{ highlight.start_seconds }},{{ highlight.end_seconds }}"></video>
@@ -57,6 +59,38 @@
     {% endif %}
   </section>
 </div>
+
+<section class="card" id="texts">
+  <h2>Überschrift, Beschreibung &amp; Hashtags</h2>
+  {% if current_user.can_edit %}
+  <form method="post" action="/highlights/{{ highlight.id }}/metadata" class="form">
+    {{ m.csrf() }}
+    <label class="field"><span>Überschrift (wird im Video eingeblendet, max. 60 Zeichen)</span>
+      <input type="text" name="title" maxlength="60" required value="{{ highlight.title or '' }}"></label>
+    <label class="field"><span>TikTok-Beschreibung</span>
+      <textarea name="description" rows="4" maxlength="2000">{{ highlight.description or '' }}</textarea></label>
+    <label class="field"><span>Hashtags (max. 5, mit Leerzeichen oder Komma getrennt)</span>
+      <input type="text" name="hashtags" value="{{ (highlight.hashtags or []) | join(' ') }}" autocapitalize="none"></label>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Speichern</button>
+      {% if can_render %}<button class="btn btn-ghost" type="submit" name="rerender" value="1">Speichern &amp; neu schneiden</button>{% endif %}
+    </div>
+  </form>
+  {% endif %}
+  <h3>Vorschau der TikTok-Beschreibung</h3>
+  <p class="preline small notice">{{ caption or "–" }}</p>
+  {% if current_user.can_edit and can_render %}
+  <form method="post" action="/highlights/{{ highlight.id }}/render" class="form-inline">
+    {{ m.csrf() }}
+    <label class="field"><span>Layout</span>
+      <select name="layout">
+        {% for choice in layout_choices %}<option value="{{ choice }}">{{ {"auto": "Automatisch (Facecam erkannt → oben)", "facecam_split": "Facecam oben, Gameplay unten", "blur_fill": "Gameplay mittig, unscharfer Hintergrund"}[choice] }}</option>{% endfor %}
+      </select></label>
+    <button class="btn btn-ghost" type="submit">{{ "Neu schneiden" if video else "Video erstellen" }}</button>
+  </form>
+  <p class="muted small">Es wird keine Musik hinzugefügt – nur der Original-Ton, auf −14 LUFS normalisiert.</p>
+  {% endif %}
+</section>
 
 {% set a = highlight.analysis or {} %}
 {% if a %}

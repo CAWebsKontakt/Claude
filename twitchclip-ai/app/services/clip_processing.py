@@ -418,9 +418,14 @@ def reset_for_retry(db: Session, request: ClipRequest, *, actor: User) -> str:
 
     Gibt "create" oder "download" zurück – je nachdem, welcher Schritt als Nächstes ansteht.
     """
-    if request.status not in RETRYABLE_STATUSES:
+    analysis_retry = (
+        request.status == ClipRequestStatus.DOWNLOADED
+        and request.analyzed_at is None
+        and (request.error or "").startswith("Analyse:")
+    )
+    if request.status not in RETRYABLE_STATUSES and not analysis_retry:
         raise ClipRequestError("Nur übersprungene oder fehlgeschlagene Aufträge können wiederholt werden.")
-    if request.source == ClipRequestSource.SAMPLE:
+    if request.source == ClipRequestSource.SAMPLE and not analysis_retry:
         raise ClipRequestError("Beispieldateien müssen nicht erneut geladen werden.")
     streamer = db.get(Streamer, request.streamer_id)
     try:
@@ -429,6 +434,19 @@ def reset_for_retry(db: Session, request: ClipRequest, *, actor: User) -> str:
         raise ClipRequestError(str(exc)) from exc
     request.attempts = 0
     request.error = None
+    if analysis_retry:
+        if not request.file_path or not Path(request.file_path).is_file():
+            raise ClipRequestError("Die Quelldatei ist nicht mehr vorhanden.")
+        db.flush()
+        log_activity(
+            db,
+            ActivityLevel.INFO,
+            ActivityCategory.PIPELINE,
+            f"Analyse von Clip-Auftrag #{request.id} erneut gestartet",
+            user_id=actor.id,
+            streamer_id=request.streamer_id,
+        )
+        return "analyze"
     step = "download" if request.twitch_clip_id else "create"
     request.status = (ClipRequestStatus.WAITING if step == "download" else ClipRequestStatus.PLANNED).value
     db.flush()

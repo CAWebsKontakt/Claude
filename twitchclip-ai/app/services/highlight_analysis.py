@@ -45,6 +45,8 @@ from app.timeutil import local_day_bounds, utcnow
 logger = logging.getLogger(__name__)
 
 SELECTION_PREFIX = "Auswahl: "
+# Nur noch nicht weiterverarbeitete Highlights dürfen durch eine bessere Fassung ersetzt werden
+REPLACEABLE_STATUSES = (HighlightStatus.CANDIDATE.value, HighlightStatus.REJECTED.value)
 ACTIVE_HIGHLIGHT_STATUSES = (
     HighlightStatus.CANDIDATE.value,
     HighlightStatus.RENDERING.value,
@@ -226,6 +228,10 @@ def analyze_clip_request(
 
     audio_fp = _audio_fingerprint(result.audio, window)
     duplicate = _find_duplicate(db, settings, request, hashes, window, audio_fp)
+    replaced = None
+    if duplicate is not None and score > duplicate.score and duplicate.status in REPLACEABLE_STATUSES:
+        # Dieselbe Szene, aber besser bewertet (z. B. günstigerer Ausschnitt): die neue Fassung behalten
+        replaced, duplicate = duplicate, None
     source_type = {
         ClipRequestSource.SAMPLE: SourceType.SAMPLE,
         ClipRequestSource.VIEWER_CLIP: SourceType.CLIP,
@@ -281,6 +287,10 @@ def analyze_clip_request(
     db.add(highlight)
     request.analyzed_at = utcnow()
     db.flush()
+    if replaced is not None:
+        replaced.status = HighlightStatus.DUPLICATE.value
+        replaced.error = f"Duplikat von Highlight #{highlight.id} (besser bewertet)"
+        db.flush()
     log_activity(
         db,
         ActivityLevel.INFO,

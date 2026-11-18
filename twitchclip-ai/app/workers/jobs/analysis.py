@@ -58,9 +58,18 @@ def analyze_clip_job(request_id: int) -> dict:
             return {"error": str(exc)}
         group = highlight.selection_group
         selected = None
+        to_render: list[int] = []
         if group and group_is_complete(db, group):
-            selected = [h.id for h in select_group(db, settings, group)]
-        return {"highlight": highlight.id, "score": highlight.score, "selected": selected}
+            chosen = select_group(db, settings, group)
+            selected = [h.id for h in chosen]
+            to_render = [h.id for h in chosen if h.current_video is None]
+        result = {"highlight": highlight.id, "score": highlight.score, "selected": selected}
+    # Ausgewählte Highlights automatisch schneiden (Phase 5)
+    from app.workers.jobs.render import schedule_render
+
+    for highlight_id in to_render:
+        schedule_render(highlight_id)
+    return result
 
 
 def analyze_pending_job() -> dict:

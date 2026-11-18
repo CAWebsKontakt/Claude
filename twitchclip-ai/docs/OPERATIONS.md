@@ -73,6 +73,8 @@ docker compose exec worker python -c "from app.workers.jobs.twitch import discov
 | Kein VOD gefunden | Beim Streamer muss „Vergangene Übertragungen speichern“ aktiviert sein |
 | Highlights ohne Transkript („Sprache … nicht verfügbar“) | Whisper-Modell nicht ladbar (huggingface.co erreichbar?) – `docker compose logs worker-media \| grep Spracherkennung` |
 | Media-Worker wird beendet (OOM) | `MEDIA_WORKER_MEMORY` erhöhen oder kleineres `WHISPER_MODEL` wählen |
+| „Schnitt fehlgeschlagen: FFmpeg-Fehler …“ | Meldung im Highlight lesen; Quelldatei beschädigt oder bereits gelöscht (Aufbewahrungsfrist) |
+| Untertitel fehlen im Video | Kein Transkript (Whisper) oder `SUBTITLES_ENABLED=false`; Schrift fehlt → Image neu bauen (`fonts-dejavu-core`) |
 
 ## 3. Clip-Verarbeitung (Modus B)
 
@@ -123,7 +125,17 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
   docker compose exec worker python -c "from app.workers.jobs.analysis import analyze_pending_job as j; print(j())"
   ```
 
-## 5. Benutzer
+## 5. Videoschnitt und Untertitel
+
+* Ausgewählte Highlights (Phase 4) werden automatisch im Hochformat 1080×1920 geschnitten. Ergebnis:
+  Dashboard → *Highlights* → Highlight → Vorschau mit Untertiteln, *MP4 herunterladen*, *Untertitel (SRT)*.
+* **Texte bearbeiten:** Überschrift (im Video eingeblendet, max. 60 Zeichen), TikTok-Beschreibung, bis zu
+  5 Hashtags → *Speichern* oder *Speichern & neu schneiden*. Die Vorschau zeigt den späteren TikTok-Text.
+* **Layout ändern:** *Layout* → „Facecam oben“ bzw. „Gameplay mittig“ → *Neu schneiden*.
+* Rechenzeit (4 vCPU, `RENDER_PRESET=medium`): etwa 20–40 s je 30-s-Clip. Auf kleinen Servern
+  `RENDER_PRESET=veryfast` setzen.
+
+## 6. Benutzer
 
 * Dashboard → *Benutzer* (nur Admins): anlegen, Rolle ändern, deaktivieren, Passwort setzen.
 * Rollen: **Administrator** (alles), **Redakteur** (Streamer, Rechte, Highlights, Freigaben), **Betrachter** (lesen).
@@ -133,7 +145,7 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
   docker compose exec web python -m app.cli reset-password --username admin
   ```
 
-## 6. Überwachung
+## 7. Überwachung
 
 | Was | Wie |
 |---|---|
@@ -167,7 +179,7 @@ for name in ALL_QUEUES:
 PY
 ```
 
-## 7. Speicher
+## 8. Speicher
 
 * Automatisch: stündliche Bereinigung (`STORAGE_RETENTION_DAYS`, `STORAGE_MAX_GB`), Videos in offener Freigabe
   bleiben geschützt. Docker-Logs sind auf 5 × 10 MB je Container begrenzt.
@@ -179,7 +191,7 @@ PY
   docker image prune -f                                                    # alte Images
   ```
 
-## 8. Sicherung und Wiederherstellung
+## 9. Sicherung und Wiederherstellung
 
 ```bash
 bash scripts/backup.sh                                     # sofortiges Backup nach ./backups
@@ -188,7 +200,7 @@ bash scripts/restore.sh backups/twitchclip-YYYYMMDD-HHMMSS.sql.gz
 
 Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTION_KEY`) – getrennt voneinander.
 
-## 9. Schlüssel rotieren
+## 10. Schlüssel rotieren
 
 * `SECRET_KEY` ändern → alle Benutzer werden abgemeldet. `docker compose up -d`.
 * `TOKEN_ENCRYPTION_KEY` rotieren:
@@ -201,7 +213,7 @@ Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTI
   # danach in .env nur noch TOKEN_ENCRYPTION_KEY=<NEU>, erneut docker compose up -d
   ```
 
-## 10. Fehlerbehebung
+## 11. Fehlerbehebung
 
 | Symptom | Ursache / Lösung |
 |---|---|

@@ -2,7 +2,7 @@
 
 ## Automatisierte Tests
 
-Die Suite (193 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+Die Suite (212 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
 (Twitch, ab Phase 6 TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
@@ -41,6 +41,7 @@ docker compose --profile test run --rm --build test
 | `test_twitch_authorization.py` | Einladungslink (Signatur, Ablauf, einmalig), kompletter OAuth-Ablauf über HTTP, Editor-Rolle, fehlende Scopes, Token-Erneuerung/-Sperre, stündliche Validierung, EventSub-Widerruf, Trennen im Dashboard |
 | `test_clip_processing.py` | Zeitangaben, Kandidatenauswahl ohne Überlappung, Rechteprüfung vor jedem Schritt, Clip aus VOD (Parameter), Download ohne Token zum CDN, SHA-256-Duplikate, Größenlimit, Wiederholungen, 403 bei Editor, Testmodus mit echten FFmpeg-Beispielvideos, Neustart nach Re-Autorisierung |
 | `test_analysis.py` | Ton-Ausbrüche, Sprachsignale, Fensterwahl, Bewertung mit Umverteilung, Bild-Hashes, Facecam-Erkennung, Chat-Zähler ohne Texte, Chat-Spitzen als Kandidaten, Chat-Abo, Auswahl der besten N mit Schwelle und Tageslimit, Analyse echter FFmpeg-Testvideos, Duplikat gleicher VOD-Moment |
+| `test_rendering.py` | Layout-Wahl und Ausschnitte innerhalb der Quelle, Untertitel-Zeilen/Karaoke/Überschrift, SRT, Titel/Beschreibung/max. 5 Hashtags, echtes Rendering beider Layouts (1080×1920, H.264/AAC, 30 fps), Aufräumen alter Fassungen, Schutz von Fassungen in der Warteschlange, Rechteprüfung, Dashboard-Bearbeitung, automatischer Schnitt nach der Auswahl |
 
 ## Phase 1 – Abnahme auf dem VPS
 
@@ -209,6 +210,34 @@ sed -i 's/^TEST_MODE=.*/TEST_MODE=false/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGH
 Mit einem autorisierten Kanal (Phase 3) läuft dieselbe Analyse automatisch nach jedem Stream; mit erlaubter
 Chat-Statistik erscheint zusätzlich „Chat-Reaktion“ in der Bewertung, und Chat-Spitzen werden zu eigenen
 Kandidaten (Clip-Aufträge „Aus VOD (automatisch)“).
+
+## Phase 5 – Abnahme auf dem VPS (Videoschnitt & Untertitel)
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git am /pfad/TwitchClip-Phase-5.patch && docker compose up -d --build     # Image enthält jetzt fonts-dejavu-core
+docker compose --profile test run --rm --build test                     # alle Tests bestanden
+docker compose exec worker-media fc-list | grep -i dejavu               # Schrift für Untertitel vorhanden
+
+# Testmodus (wie in Phase 4): Beispielvideos → Analyse → Auswahl → automatischer Schnitt
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGHT_SCORE=30/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli make-samples --count 2 --duration 60 --overwrite
+docker compose exec worker python -m app.cli ingest-samples
+sleep 120
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select h.id, h.status, v.layout, v.width, v.height, round(v.duration::numeric,1) as s, pg_size_pretty(v.size_bytes) from highlights h join rendered_videos v on v.highlight_id = h.id and v.deleted_at is null order by h.id;"
+#   erwartet: status rendered, 1080 × 1920, 20–45 s
+
+# Technische Prüfung einer Ausgabedatei
+F=$(docker compose exec -T postgres psql -U twitchclip -d twitchclip -tAc "select file_path from rendered_videos where deleted_at is null order by id desc limit 1")
+docker compose exec worker-media ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,sample_rate -of compact "$F"
+docker compose exec worker-media sh -c "ffmpeg -hide_banner -i '$F' -af ebur128 -f null - 2>&1 | grep ' I:' | tail -1"   # ≈ -14 LUFS
+
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGHT_SCORE=60/' .env && docker compose up -d
+```
+
+Im Dashboard: Highlight öffnen → Vorschau abspielen (Untertitel, Überschrift), Texte bearbeiten →
+*Speichern & neu schneiden*, Layout wechseln, MP4 und SRT herunterladen.
 
 ## Lokale Entwicklung ohne Docker
 

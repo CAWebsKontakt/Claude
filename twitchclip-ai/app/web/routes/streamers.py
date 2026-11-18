@@ -471,11 +471,14 @@ def retry_clip_request(
         return _redirect(streamer.id)
     # Neue Job-ID je Neustart, damit alte (fehlgeschlagene) Jobs nicht blockieren
     run = f"r{int(utcnow().timestamp())}"
-    queued = (
-        schedule_download(clip_request.id, run=run)
-        if step == "download"
-        else schedule_create(clip_request.id, run=run)
-    )
+    if step == "analyze":
+        from app.workers.jobs.analysis import schedule_analysis
+
+        queued = schedule_analysis(clip_request.id)
+    elif step == "download":
+        queued = schedule_download(clip_request.id, run=run)
+    else:
+        queued = schedule_create(clip_request.id, run=run)
     flash(
         request,
         f"Auftrag #{clip_request.id} wird erneut verarbeitet."

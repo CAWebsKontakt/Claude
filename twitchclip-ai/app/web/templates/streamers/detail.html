@@ -279,7 +279,7 @@
           {% set tones = {"downloaded": "good", "failed": "bad", "skipped": "warn", "duplicate": "neutral"} %}
           {% if r.analyzed_at %}{{ m.badge("Analysiert", "good") }}{% else %}{{ m.badge(CLIP_STATUS_LABELS.get(r.status, r.status), tones.get(r.status, "info")) }}{% endif %}
           {% if r.error %}<div class="muted small wrap">{{ r.error }}</div>{% endif %}
-          {% if current_user.can_edit and r.status in ["skipped", "failed"] and r.source != "sample" %}
+          {% if current_user.can_edit and ((r.status in ["skipped", "failed"] and r.source != "sample") or (r.status == "downloaded" and not r.analyzed_at and (r.error or "").startswith("Analyse:"))) %}
           <form method="post" action="/streamers/{{ streamer.id }}/clip-requests/{{ r.id }}/retry">
             {{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Erneut versuchen</button>
           </form>

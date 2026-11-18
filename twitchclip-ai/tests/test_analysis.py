@@ -329,3 +329,44 @@ def test_same_vod_moment_is_duplicate(twitch_settings, database, db_session, mak
     second = analyze_clip_request(db_session, twitch_settings, requests[1], None)
     assert first.status == "candidate"
     assert second.status == "duplicate" and f"#{first.id}" in second.error
+
+
+def test_better_duplicate_replaces_weaker(db_session, settings, monkeypatch):
+    from app.services import highlight_analysis as ha
+
+    s = factories.streamer(db_session, "kanal")
+    weak = _highlight(db_session, s, 50, "session-1")
+    request = ClipRequest(
+        streamer_id=s.id,
+        source="viewer_clip",
+        dedup_key="viewer:x",
+        status="downloaded",
+        file_path=__file__,
+        sha256="a" * 64,
+    )
+    db_session.add(request)
+    db_session.flush()
+
+    class Result:
+        duration = 30.0
+        audio = None
+        transcript = None
+        vision = type(
+            "V",
+            (),
+            {
+                "motion": [1.0] * 30,
+                "scene_cuts": [],
+                "facecam": None,
+                "width": 1920,
+                "height": 1080,
+                "frame_hashes": ["0" * 16] * 3,
+            },
+        )()
+
+    monkeypatch.setattr(ha, "analyze_media", lambda *a, **k: Result())
+    monkeypatch.setattr(ha, "_find_duplicate", lambda *a, **k: weak)
+    monkeypatch.setattr(ha, "ensure_can_process", lambda streamer: None)
+    better = ha.analyze_clip_request(db_session, settings, request, None)
+    assert better.score > 50 and better.status == "candidate"
+    assert weak.status == "duplicate" and f"#{better.id}" in weak.error
