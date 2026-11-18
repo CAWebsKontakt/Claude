@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Zustimmung für Clips{% endblock %}
+{% block public %}
+<section class="card login-card">
+  <h1 class="brand brand-lg">TwitchClip <span>AI</span></h1>
+  <h2>Clips von twitch.tv/{{ streamer.twitch_login }} – Ihre Zustimmung</h2>
+  <p>Sie wurden gefragt, ob aus Ihren Streams kurze Hochformat-Clips erstellt werden dürfen
+    {%- if offer_publishing %}, die auf TikTok veröffentlicht werden – mit Hinweis auf Ihren Kanal{% endif %}.
+    Sie entscheiden hier selbst, was erlaubt ist, und können es jederzeit widerrufen.</p>
+
+  {% if error %}<div class="flash flash-error" role="alert">Bitte setzen Sie den Haken bei der Zustimmung, um fortzufahren.</div>{% endif %}
+
+  <form method="get" action="/oauth/twitch/authorize" class="form">
+    <input type="hidden" name="invite" value="{{ invite }}">
+    <fieldset class="checks">
+      <legend>Was darf passieren?</legend>
+      <label class="confirm"><input type="checkbox" name="agree" value="1" required>
+        <span><strong>Clips aus meinen Streams erstellen und bearbeiten</strong><br>
+          <span class="muted small">Über die offizielle Twitch-API: Clips erzeugen, herunterladen, mit KI die besten Momente finden,
+            zu Hochformat-Videos mit Untertiteln schneiden. Kein Zugriff auf Ihr Passwort, Ihre Abonnenten oder Einnahmen.</span></span></label>
+      {% if offer_publishing %}
+      <label><input type="checkbox" name="publish" value="1">
+        <span><strong>Auf TikTok veröffentlichen</strong>{% if targets %} ({{ targets | join(", ") }}){% endif %}<br>
+          <span class="muted small">Jedes Video wird vorher von einem Menschen geprüft und freigegeben. Ohne diesen Haken
+            werden Videos nur erstellt, aber nirgends veröffentlicht.</span></span></label>
+      {% endif %}
+      {% if include_chat %}
+      <label><input type="checkbox" name="chat" value="1">
+        <span><strong>Chat-Aktivität auswerten</strong><br>
+          <span class="muted small">Nur um lebhafte Momente zu erkennen. Gespeichert werden Zählwerte – keine Nachrichten, keine Namen.</span></span></label>
+      {% endif %}
+    </fieldset>
+
+    <details class="disclosure">
+      <summary>Vollständiger Wortlaut der Zustimmung</summary>
+      <p class="preline small">{{ full_text }}</p>
+      <p class="muted small">Gespeichert wird der Wortlaut genau der Punkte, die Sie oben auswählen, zusammen mit Ihrem
+        Twitch-Konto und dem Zeitpunkt – als Nachweis für Sie und den Betreiber.</p>
+    </details>
+
+    <h3>So geht es weiter</h3>
+    <ol class="bullets">
+      <li>Mit Ihrem Twitch-Konto <strong>{{ streamer.twitch_login }}</strong> anmelden (Twitch fragt nach dem Zugriff auf Clips{% if include_chat %} und ggf. Chat{% endif %}).</li>
+      <li>Fertig – Twitch bestätigt, dass Sie der Kanalinhaber sind. Ein anderes Konto (z. B. Moderator) kann nicht zustimmen.</li>
+    </ol>
+    <button class="btn btn-primary btn-block" type="submit">Zustimmen und mit Twitch anmelden</button>
+  </form>
+  <p class="muted small">Widerruf jederzeit: Twitch → Einstellungen → Verbindungen → {{ app_name }} trennen. Danach wird nichts Neues
+    mehr verarbeitet oder veröffentlicht. Der Link ist einmalig verwendbar und läuft automatisch ab.</p>
+</section>
+{% endblock %}
+
+{% block content %}{{ self.public() }}{% endblock %}

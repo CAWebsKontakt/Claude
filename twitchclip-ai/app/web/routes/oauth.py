@@ -8,6 +8,7 @@ verwendet werden.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -22,8 +23,11 @@ from app.models import Streamer
 from app.redis_client import get_redis
 from app.services.twitch_authorization import (
     AuthorizationError,
+    ConsentChoice,
     begin_authorization,
     complete_authorization,
+    consent_text,
+    publishing_targets,
     read_invite,
 )
 from app.web.templating import render
@@ -61,26 +65,53 @@ def start(
     scopes = ["channel:manage:clips", "editor:manage:clips"] + (
         list(CHAT_SCOPES) if data.include_chat else []
     )
-    return render(
-        request,
-        "oauth/consent.html",
-        {
-            "streamer": streamer,
-            "invite": invite,
-            "scopes": [(s, SCOPE_EXPLANATIONS.get(s, s)) for s in scopes],
-            "include_chat": data.include_chat,
-        },
-    )
+    context = {
+        "streamer": streamer,
+        "invite": invite,
+        "scopes": [(s, SCOPE_EXPLANATIONS.get(s, s)) for s in scopes],
+        "include_chat": data.include_chat,
+        "error": request.query_params.get("fehlt") == "1",
+    }
+    if data.consent:
+        targets = publishing_targets(db)
+        context.update(
+            offer_publishing=data.offer_publishing,
+            targets=targets,
+            # Volltext für die maximal angefragten Rechte – der Streamer kann darunter abwählen
+            full_text=consent_text(
+                streamer,
+                publishing=data.offer_publishing,
+                chat=data.include_chat,
+                targets=targets,
+                app_name=settings.app_name,
+            ),
+        )
+        return render(request, "oauth/consent_request.html", context)
+    return render(request, "oauth/consent.html", context)
 
 
 @router.get("/authorize")
-def authorize(request: Request, invite: str = "", settings: Settings = Depends(get_settings)):
+def authorize(
+    request: Request,
+    invite: str = "",
+    agree: str = "",
+    publish: str = "",
+    chat: str = "",
+    settings: Settings = Depends(get_settings),
+):
     redis = get_redis()
     try:
         data = read_invite(settings, redis, invite)
     except AuthorizationError as exc:
         return _error(request, str(exc))
-    return RedirectResponse(begin_authorization(settings, redis, data), status_code=303)
+    choice = None
+    if data.consent:
+        if agree != "1":
+            return RedirectResponse(
+                f"/oauth/twitch/start?{urlencode({'invite': invite, 'fehlt': '1'})}", status_code=303
+            )
+        choice = ConsentChoice(publishing=publish == "1", chat=chat == "1")
+    return RedirectResponse(begin_authorization(settings, redis, data, choice), status_code=303)
 
 
 @router.get("/callback")

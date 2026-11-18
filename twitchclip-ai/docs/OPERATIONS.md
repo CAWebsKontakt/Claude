@@ -17,7 +17,20 @@ docker compose exec web python -m app.cli list-streamers
 **C) `STREAMER_LIST` in der `.env`** – kommagetrennt. Wird bei jedem `docker compose up -d` importiert; vorhandene
 Kanäle bleiben unverändert, entfernt wird nie etwas automatisch. Danach ist das Dashboard maßgeblich.
 
-### Streamer auf Modus B umstellen
+### Streamer auf Modus B umstellen – einfachster Weg: Zustimmungslink
+
+1. Dashboard → Streamer → Abschnitt **Zustimmung anfragen** → Haken „auch Veröffentlichung auf TikTok
+   anfragen“ (und optional Chat) → **Zustimmungslink erstellen**.
+2. Darunter stehen fertige Nachrichten mit Name und Link: Twitch-Flüsternachricht, Discord/E-Mail, Englisch,
+   Erinnerung. Antippen markiert den Text → kopieren → an den Streamer schicken. Tipps: `docs/STREAMER_OUTREACH.md`.
+3. Der Streamer öffnet den Link, sieht die Zustimmungserklärung, wählt aus (Clips erstellen ist Pflicht,
+   TikTok-Veröffentlichung und Chat sind freiwillig und nicht vorausgewählt) und meldet sich bei Twitch an.
+4. Nur wenn Twitch bestätigt, dass das angemeldete Konto **der Kanalinhaber** ist, wird automatisch eine
+   Erlaubnis gespeichert – mit Wortlaut, Twitch-Konto, Twitch-ID und Zeitpunkt als Nachweis – und Modus B
+   aktiviert. Moderatoren oder Editoren können so nicht zustimmen. Eine neue Zustimmung ersetzt die alte
+   (z. B. wenn der Streamer die Veröffentlichung später abwählt).
+
+### Streamer auf Modus B umstellen – mit schriftlicher Erlaubnis (Vertrag, E-Mail, Editor)
 
 1. Schriftliche Erlaubnis des Streamers oder eines berechtigten Editors einholen (E-Mail, Vertrag, Formular) –
    mit Umfang: nur Verarbeitung oder auch TikTok-Veröffentlichung, ggf. Einschränkungen.

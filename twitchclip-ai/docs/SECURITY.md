@@ -19,6 +19,11 @@ Container, Caddy/HTTPS, Mock-APIs für Twitch und TikTok, Browser-Durchlauf mit 
   `ensure_can_publish()` laufen unmittelbar vor Download, Analyse, Schnitt, Warteschlange, Freigabe **und** Upload.
   Ein Widerruf (Dashboard, Twitch-EventSub `user.authorization.revoke`, abgelehnte Token-Erneuerung, stündliche
   Validierung) stoppt alle folgenden Schritte – im E2E-Test nachgewiesen.
+* **Online-Zustimmung:** Ein Zustimmungslink (signiert, einmalig, läuft ab) erzeugt nur dann eine Erlaubnis,
+  wenn Twitch bestätigt, dass das angemeldete Konto der Kanalinhaber ist (Twitch-User-ID = Kanal-ID); sonst wird
+  das Token sofort widerrufen. Angefragt werden kann nur, was der Link anbietet; die Auswahl liegt serverseitig im
+  OAuth-State. Gespeichert werden Wortlaut (Fassung), Twitch-Konto, -ID und Zeitpunkt; eine neue Zustimmung
+  ersetzt die alte.
 * **Anmeldung:** Argon2id, Mindestlänge 12, Sperre nach Fehlversuchen je Benutzer und IP; Sitzungscookie
   `HttpOnly`, `Secure`, `SameSite=Lax`, max. 12 h, Widerruf aller Sitzungen über `session_version`.
 * **Rollen:** Betrachter lesen nur; Redakteure verwalten Streamer/Highlights/Freigaben; nur Admins verwalten

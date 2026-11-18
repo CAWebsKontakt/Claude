@@ -45,6 +45,7 @@ sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d
 | [docs/API_REGISTRATION.md](docs/API_REGISTRATION.md) | Twitch- und TikTok-App registrieren, Review/Audit |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Streamer hinzufügen, Benutzer, Überwachung, Backup, Fehlerbehebung |
 | [docs/TESTING.md](docs/TESTING.md) | Automatisierte Tests und Abnahmebefehle je Phase |
+| [docs/STREAMER_OUTREACH.md](docs/STREAMER_OUTREACH.md) | Streamer um Erlaubnis fragen: Ein-Klick-Zustimmung, Nachrichtenvorlagen, Tipps |
 | [docs/SECURITY.md](docs/SECURITY.md) | Sicherheitsprüfung, Härtung, verbleibende Risiken |
 
 ## Entwicklungsstand

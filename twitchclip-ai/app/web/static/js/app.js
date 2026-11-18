@@ -46,7 +46,7 @@
   // Autorisierungslink: beim Antippen komplett markieren (einfaches Kopieren auf dem Handy)
   document.addEventListener("focusin", function (event) {
     var el = event.target;
-    if (el instanceof HTMLInputElement && el.hasAttribute("data-select-on-focus")) el.select();
+    if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.hasAttribute("data-select-on-focus")) el.select();
   });
 
   document.addEventListener("keydown", function (event) {

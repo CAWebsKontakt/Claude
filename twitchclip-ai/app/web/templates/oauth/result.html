@@ -9,6 +9,9 @@
       <dt>Kanal</dt><dd>{{ result.streamer_name }}</dd>
       <dt>Angemeldet als</dt><dd>{{ result.login }} ({{ "Kanalinhaber" if result.role == "broadcaster" else "Editor" }})</dd>
       <dt>Chat-Statistik</dt><dd>{{ "erlaubt (nur Zählwerte)" if result.chat_enabled else "nicht erlaubt" }}</dd>
+      {% if result.consent %}
+      <dt>Ihre Zustimmung</dt><dd>Clips erstellen und bearbeiten{% if result.publishing %} · Veröffentlichung auf TikTok (jeweils nach Freigabe){% else %} · keine Veröffentlichung{% endif %}</dd>
+      {% endif %}
     </dl>
     <p class="muted small">Sie können dieses Fenster schließen. Widerruf jederzeit unter Twitch → Einstellungen → Verbindungen.</p>
   {% else %}

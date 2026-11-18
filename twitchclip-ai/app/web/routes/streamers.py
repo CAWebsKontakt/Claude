@@ -27,9 +27,16 @@ from app.models import (
 )
 from app.services import streamers as streamer_service
 from app.services.clip_processing import ClipRequestError, parse_timecode, request_vod_clip, reset_for_retry
+from app.services.outreach import build_messages
 from app.services.permissions import PermissionError_, PermissionInput, add_permission, revoke_permission
 from app.services.streamers import StreamerError, compute_rights
-from app.services.twitch_authorization import AuthorizationError, create_invite, disconnect
+from app.services.twitch_authorization import (
+    AuthorizationError,
+    create_consent_invite,
+    create_invite,
+    disconnect,
+    publishing_targets,
+)
 from app.timeutil import utcnow
 from app.web.deps import csrf_protect, require_editor, require_user
 from app.web.flash import flash
@@ -158,6 +165,16 @@ def streamer_detail(
     )
     invite = request.session.pop("twitch_invite", None)
     invite_url = invite["url"] if invite and invite.get("streamer_id") == streamer.id else None
+    consent = request.session.pop("consent_invite", None)
+    consent_messages = None
+    if consent and consent.get("streamer_id") == streamer.id:
+        consent_messages = build_messages(
+            channel=streamer.twitch_login,
+            display_name=streamer.display_name or streamer.twitch_login,
+            link=consent["url"],
+            publishing=bool(consent.get("publishing")),
+            targets=publishing_targets(db),
+        )
     return render(
         request,
         "streamers/detail.html",
@@ -174,6 +191,8 @@ def streamer_detail(
             "clip_requests": clip_requests,
             "twitch_tokens": twitch_tokens,
             "invite_url": invite_url,
+            "consent_messages": consent_messages,
+            "consent_url": consent["url"] if consent_messages else None,
             "twitch_available": twitch_available(settings),
             "eventsub_active": settings.eventsub_webhooks_active,
             "nav": "streamers",
@@ -358,6 +377,42 @@ def create_twitch_invite(
         return _redirect(streamer.id)
     request.session["twitch_invite"] = {"streamer_id": streamer.id, "url": url}
     flash(request, "Autorisierungslink erstellt – bitte an den Streamer bzw. Editor senden.", "success")
+    return _redirect(streamer.id)
+
+
+@router.post("/{streamer_id}/consent-invite", dependencies=[Depends(csrf_protect)])
+def create_consent_link(
+    request: Request,
+    streamer_id: int,
+    offer_publishing: str | None = Form(None),
+    include_chat: str | None = Form(None),
+    user: User = Depends(require_editor),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    streamer = _load(db, streamer_id)
+    try:
+        url = create_consent_invite(
+            db,
+            settings,
+            streamer,
+            actor=user,
+            offer_publishing=offer_publishing is not None,
+            include_chat=include_chat is not None,
+        )
+        db.commit()
+    except AuthorizationError as exc:
+        db.rollback()
+        flash(request, str(exc), "error")
+        return _redirect(streamer.id)
+    request.session["consent_invite"] = {
+        "streamer_id": streamer.id,
+        "url": url,
+        "publishing": offer_publishing is not None,
+    }
+    flash(
+        request, "Zustimmungslink erstellt – Nachricht unten kopieren und an den Streamer senden.", "success"
+    )
     return _redirect(streamer.id)
 
 

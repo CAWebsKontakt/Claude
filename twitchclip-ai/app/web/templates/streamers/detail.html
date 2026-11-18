@@ -181,6 +181,37 @@
   {% endif %}
 </section>
 
+{% if not streamer.is_demo %}
+<section class="card" id="zustimmung">
+  <h2>Zustimmung anfragen</h2>
+  <p class="small">Der Streamer öffnet den Link, wählt aus, was er erlaubt, und meldet sich mit seinem Twitch-Konto an.
+    Bestätigt Twitch, dass er der <strong>Kanalinhaber</strong> ist, wird die Erlaubnis mit Wortlaut, Zeitpunkt und Twitch-Konto
+    automatisch dokumentiert und Modus B aktiviert. Bis dahin passiert mit seinen Inhalten nichts.</p>
+  {% if consent_messages %}
+  <div class="notice">
+    <p><strong>Zustimmungslink</strong> (gültig {{ settings.twitch_invite_valid_days }} Tage, einmalig verwendbar):</p>
+    <input type="text" readonly value="{{ consent_url }}" aria-label="Zustimmungslink" data-select-on-focus>
+  </div>
+  {% for msg in consent_messages %}
+  <label class="field"><span>{{ msg.title }}{% if msg.key in ["whisper", "english"] %} · {{ msg.text | length }}/500 Zeichen{% endif %}</span>
+    <textarea readonly rows="{{ 5 if msg.key != 'long' else 16 }}" data-select-on-focus>{{ msg.text }}</textarea></label>
+  {% if msg.hint %}<p class="muted small">{{ msg.hint }}</p>{% endif %}
+  {% endfor %}
+  <p class="muted small">Tipp: Antippen markiert den ganzen Text zum Kopieren. Die Seite zeigt den Link nur einmal – bei Bedarf einfach einen neuen erstellen.</p>
+  {% endif %}
+  {% if current_user.can_edit %}
+  <form method="post" action="/streamers/{{ streamer.id }}/consent-invite" class="form form-inline">
+    {{ m.csrf() }}
+    <label class="check-inline"><input type="checkbox" name="offer_publishing" value="1" checked> auch Veröffentlichung auf TikTok anfragen</label>
+    <label class="check-inline"><input type="checkbox" name="include_chat" value="1"> Chat-Statistik anfragen</label>
+    <button class="btn btn-primary" type="submit" {% if not streamer.twitch_user_id or not settings.twitch_configured %}disabled{% endif %}>Zustimmungslink erstellen</button>
+  </form>
+  {% if not settings.twitch_configured %}<p class="muted small">Voraussetzung: Twitch-API konfiguriert (TWITCH_CLIENT_ID/SECRET).</p>
+  {% elif not streamer.twitch_user_id %}<p class="muted small">Voraussetzung: Twitch-Konto verknüpft („Twitch jetzt abfragen“).</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
 {% if streamer.mode == "authorized" and not streamer.is_demo %}
 <section class="card" id="twitch-auth">
   <h2>Twitch-Autorisierung (Streamer/Editor)</h2>

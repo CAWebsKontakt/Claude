@@ -2,7 +2,7 @@
 
 ## Automatisierte Tests
 
-Die Suite (265 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+Die Suite (290 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
 (Twitch, TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
@@ -44,6 +44,7 @@ docker compose --profile test run --rm --build test
 | `test_tiktok.py` | Stückregeln der Content Posting API, PKCE (S256), kompletter OAuth-Ablauf über HTTP inkl. verschlüsselter Tokens, falscher/abgelaufener State, Rollen, Fehlerzuordnung (401/429/5xx/Fehlercodes), `Content-Range` je Stück, Token-Erneuerung und -Sperre, Trennen mit Widerruf, Creator-Info |
 | `test_publishing.py` | Warteschlange nur mit Rechten und fertigem Video, alle Freigabe-Pflichtangaben und UX-Regeln, Direct Post nur mit Schalter + Scope, Testmodus nur Export, Videolänge, ZIP-Export, Direct Post und Inbox Ende-zu-Ende, Fehlererklärung + erneute Prüfung, Rechteentzug vor Upload, nie doppelt initialisieren, Rate-Limit, Wiederaufnahme verlorener Jobs, Dashboard ohne Voreinstellungen |
 | `test_operations.py` | Alarme (System + fachlich: Twitch-OAuth, auslaufende Erlaubnis, TikTok-Konto, fehlgeschlagene Uploads, Freigabestau), einmalige Meldung + Entwarnung, Discord/Slack/Klartext, Zustellfehler, `/metrics` nur mit Token, eindeutige Selbsttest-Videos, kompletter Selbsttest mit echtem FFmpeg, CLI |
+| `test_consent.py` | Zustimmungslink ohne vorherige Erlaubnis, Zustimmungsseite (nichts vorausgewählt, Pflicht-Haken), Erlaubnis + Modus B nur für den Kanalinhaber, Editor/Moderator abgewiesen und Token widerrufen, nicht angebotene Rechte nicht erschleichbar, neue Zustimmung ersetzt alte, Dashboard mit Nachrichtenvorlagen, 500-Zeichen-Grenze ohne abgeschnittenen Link |
 | `test_rendering.py` | Layout-Wahl und Ausschnitte innerhalb der Quelle, Untertitel-Zeilen/Karaoke/Überschrift, SRT, Titel/Beschreibung/max. 5 Hashtags, echtes Rendering beider Layouts (1080×1920, H.264/AAC, 30 fps), Aufräumen alter Fassungen, Schutz von Fassungen in der Warteschlange, Rechteprüfung, Dashboard-Bearbeitung, automatischer Schnitt nach der Auswahl |
 
 ## Phase 1 – Abnahme auf dem VPS
