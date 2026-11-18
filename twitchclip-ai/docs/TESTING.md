@@ -2,7 +2,7 @@
 
 ## Automatisierte Tests
 
-Die Suite (290 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+Die Suite (289 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
 (Twitch, TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
