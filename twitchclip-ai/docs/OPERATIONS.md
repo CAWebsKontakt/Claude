@@ -55,6 +55,12 @@ der Streamer **automatisch** auf Modus A zurück. Abgelaufene Erlaubnisse (Gült
 Detailseite → *Streamer entfernen* → Twitch-Namen zur Bestätigung eintippen. Löscht Nachweise, Tokens, Clips und
 Highlights; das Aktivitätsprotokoll bleibt erhalten. Alternativ *Überwachung pausieren*, um Daten zu behalten.
 
+### Hype-Liste
+
+Dashboard → *Hype-Liste*: wachsende Live-Kanäle (Sprache/Kategorie/Zuschauerbereich per `HYPE_*` in der `.env`),
+mit *Zustimmung anfragen* (Link + Nachricht, siehe `docs/STREAMER_OUTREACH.md`) oder *Nur beobachten*.
+Kosten: je Lauf `HYPE_PAGES` + bis zu `HYPE_CLIP_CHECKS` Helix-Aufrufe (Standard ≤ 28 alle 15 min).
+
 ## 2. Twitch-Überwachung
 
 * **Live-Erkennung:** EventSub-Webhooks melden Streamstart/-ende in Sekunden. Zusätzlich fragt der Scheduler alle

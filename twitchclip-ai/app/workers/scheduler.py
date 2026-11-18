@@ -72,6 +72,10 @@ def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
             PeriodicJob("clips_resume_stuck", "app.workers.jobs.clips.resume_stuck_requests_job", 1800),
             PeriodicJob("chat_flush", "app.workers.jobs.analysis.flush_chat_job", 60),
         ]
+        if settings.hype_enabled:
+            jobs.append(
+                PeriodicJob("hype_scan", f"{TWITCH_JOBS}.hype_scan_job", settings.hype_refresh_minutes * 60)
+            )
     if settings.tiktok_configured and not settings.test_mode:
         from app.workers.jobs.publish import PERIODIC as TIKTOK_PERIODIC
 

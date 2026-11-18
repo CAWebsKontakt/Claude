@@ -46,6 +46,7 @@ img { max-width: 100%; }
 .wrap { overflow-wrap: anywhere; }
 .preline { white-space: pre-line; overflow-wrap: anywhere; }
 .text-bad { color: var(--bad); }
+.text-good { color: var(--good, #2fbf71); }
 
 /* ---------- Topbar & Navigation ---------- */
 .topbar {

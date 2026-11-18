@@ -339,3 +339,22 @@ def validate_twitch_tokens_job() -> dict:
         return {"error": str(exc)}
     record_status(get_redis(), last_token_validation_at=utcnow().isoformat())
     return report.__dict__
+
+
+def hype_scan_job() -> dict:
+    """Hype-Liste aktualisieren (nur öffentliche Daten)."""
+    from app.services.hype import scan
+
+    settings = get_settings()
+    if not twitch_available(settings) or not settings.hype_enabled:
+        return {"skipped": True}
+    try:
+        with _client() as client, session_scope() as db:
+            result = scan(db, settings, get_redis(), client)
+    except TwitchRateLimitedError as exc:
+        _report_error("Hype-Liste (Rate-Limit)", exc)
+        return {"error": "rate_limited"}
+    except TwitchError as exc:
+        _report_error("Hype-Liste", exc)
+        return {"error": str(exc)}
+    return {"scanned": result.scanned, "in_range": result.in_range, "listed": len(result.entries)}

@@ -234,6 +234,12 @@ Werden in Phase 6 im Freigabeformular umgesetzt:
 * Nicht verifiziert (Sandbox nicht erreichbar): die genaue Schreibweise einzelner Fehlercodes; unbekannte Codes
   werden mit Code und TikTok-Text angezeigt.
 
+## Hype-Liste (Version 1.2)
+
+* `GET /helix/streams?type=live&language=…&first=100` (App-Token, öffentlich, nach Zuschauern sortiert) und
+  `GET /helix/clips?broadcaster_id=…` – beides Modus-A-Daten; es wird nichts heruntergeladen.
+* Zuschauer-Stichproben liegen nur in Redis (6 h), die Liste selbst 3 h; keine personenbezogenen Daten.
+
 ## Teil 3 – Was daraus für das System folgt
 
 | Einschränkung | Umsetzung |

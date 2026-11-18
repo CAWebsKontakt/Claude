@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Hype-Liste{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Hype-Liste</h1>
+    <p class="muted small">Kanäle, die gerade wachsen – aus öffentlichen Twitch-Daten. Nichts wird heruntergeladen, niemand wird kontaktiert.
+      Mit „Zustimmung anfragen“ bekommst du Link und fertige Nachricht; senden musst du selbst.</p>
+  </div>
+  {% if current_user.can_edit %}
+  <form method="post" action="/hype/refresh">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Jetzt aktualisieren</button></form>
+  {% endif %}
+</div>
+
+{% if not settings.twitch_configured %}
+<p class="notice card-warn">Die Twitch-API ist nicht konfiguriert (TWITCH_CLIENT_ID/SECRET) – die Hype-Liste braucht sie.</p>
+{% elif not settings.hype_enabled %}
+<p class="notice">Die Hype-Liste ist ausgeschaltet (HYPE_ENABLED=false).</p>
+{% endif %}
+
+{% if result %}
+<p class="muted small">Stand {{ result.at_datetime | localtime }} ({{ result.at_datetime | timeago }}) · {{ result.scanned }} Live-Streams geprüft ·
+  {{ result.in_range }} mit {{ result.settings.min }}–{{ result.settings.max }} Zuschauern · Sprache: {{ result.settings.language }} ·
+  Wachstum = Zuschauer jetzt gegenüber vor etwa einer Stunde</p>
+
+<form method="get" action="/hype" class="filters">
+  <label class="field"><span>Kategorie</span>
+    <select name="game"><option value="">alle</option>{% for g in games %}<option value="{{ g }}" {% if filters.game == g %}selected{% endif %}>{{ g }}</option>{% endfor %}</select></label>
+  <label class="check-inline"><input type="checkbox" name="nur_neue" value="1" {% if filters.nur_neue %}checked{% endif %}> nur Kanäle, die ich noch nicht habe</label>
+  <button class="btn btn-ghost" type="submit">Filtern</button>
+</form>
+
+<section class="card">
+  {% if entries %}
+  <table class="table">
+    <thead><tr><th>#</th><th>Kanal</th><th>Hype</th><th>Zuschauer</th><th>Clips</th><th>Bester Clip</th><th></th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td data-label="#">{{ loop.index }}</td>
+        <td data-label="Kanal"><a href="https://www.twitch.tv/{{ e.login }}" target="_blank" rel="noopener noreferrer"><strong>{{ e.name }}</strong></a>
+          <div class="muted small wrap">{{ e.game or "–" }}{% if e.uptime_minutes is not none %} · live seit {{ (e.uptime_minutes // 60) }} h {{ e.uptime_minutes % 60 }} min{% endif %}</div>
+          <div class="muted small wrap">{{ e.title }}</div></td>
+        <td data-label="Hype">{{ m.score(e.score) }}</td>
+        <td data-label="Zuschauer">{{ "{:,}".format(e.viewers).replace(",", ".") }}
+          {% if e.growth_pct is not none %}<div class="small {{ 'text-good' if e.growth_pct > 0 else 'muted' }}">{{ "%+.0f"|format(e.growth_pct) }} % in {{ e.minutes_compared }} min</div>
+          {% else %}<div class="muted small">Verlauf folgt</div>{% endif %}</td>
+        <td data-label="Clips">{% if e.clips_3h is not none %}{{ e.clips_3h }} in 3 h<div class="muted small">{{ e.clips_24h }} in 24 h</div>{% else %}–{% endif %}</td>
+        <td data-label="Bester Clip">{% if e.top_clip_url %}<a href="{{ e.top_clip_url }}" target="_blank" rel="noopener noreferrer" class="wrap">{{ e.top_clip_title or "Clip" }}</a>
+          <div class="muted small">{{ e.top_clip_views }} Aufrufe</div>{% else %}–{% endif %}</td>
+        <td class="actions">
+          {% if e.streamer_id and e.streamer_mode == "authorized" %}
+            <a class="btn btn-ghost btn-sm" href="/streamers/{{ e.streamer_id }}">{{ m.badge("Zustimmung liegt vor", "good") }}</a>
+          {% elif current_user.can_edit %}
+            <form method="post" action="/hype/{{ e.user_id }}/request">{{ m.csrf() }}<button class="btn btn-primary btn-sm" type="submit">Zustimmung anfragen</button></form>
+            {% if not e.streamer_id %}<form method="post" action="/hype/{{ e.user_id }}/watch">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Nur beobachten</button></form>
+            {% else %}<a class="btn btn-ghost btn-sm" href="/streamers/{{ e.streamer_id }}">Im Dashboard</a>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    {{ m.empty("Keine Kanäle für diesen Filter.") }}
+  {% endif %}
+</section>
+<p class="muted small">Fair bleiben: lieber wenige, passende Kanäle persönlich anschreiben als viele – Massen-Flüsternachrichten
+  führen bei Twitch zur Sperre. Tipps: docs/STREAMER_OUTREACH.md.</p>
+{% else %}
+<section class="card">{{ m.empty("Noch keine Daten.", "Die Liste wird alle " ~ settings.hype_refresh_minutes ~ " Minuten aktualisiert; das Wachstum ist nach etwa einer Stunde sichtbar.") }}</section>
+{% endif %}
+{% endblock %}

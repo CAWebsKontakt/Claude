@@ -103,6 +103,7 @@ class TwitchStream:
     viewer_count: int
     started_at: datetime | None
     language: str | None
+    user_name: str = ""
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> TwitchStream:
@@ -115,6 +116,7 @@ class TwitchStream:
             viewer_count=int(data.get("viewer_count") or 0),
             started_at=parse_twitch_time(data.get("started_at")),
             language=data.get("language") or None,
+            user_name=data.get("user_name") or "",
         )
 
 
@@ -400,6 +402,19 @@ class HelixClient:
         for chunk in _chunks(list(user_ids)):
             params = [("user_id", i) for i in chunk] + [("type", "live"), ("first", "100")]
             payload = self.request("GET", "/streams", params=params).json()
+            streams.extend(TwitchStream.from_api(item) for item in payload.get("data", []))
+        return streams
+
+    def get_top_streams(
+        self, *, language: str | None = None, game_ids: Iterable[str] = (), max_pages: int = 3
+    ) -> list[TwitchStream]:
+        """Live-Streams nach Zuschauerzahl absteigend (öffentlich, App-Token) – Grundlage der Hype-Liste."""
+        params: list[tuple[str, str]] = [("type", "live"), ("first", "100")]
+        if language:
+            params.append(("language", language))
+        params += [("game_id", str(g)) for g in list(game_ids)[:100]]
+        streams: list[TwitchStream] = []
+        for payload in self._paginate("/streams", params, max_pages=max_pages):
             streams.extend(TwitchStream.from_api(item) for item in payload.get("data", []))
         return streams
 

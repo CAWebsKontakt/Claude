@@ -6,6 +6,13 @@ schnell und freundlich einzuholen. Die fertigen Nachrichten (mit Name und Link) 
 
 ## Wen fragen?
 
+* Dashboard → **Hype-Liste**: Kanäle, die gerade wachsen – Zuschauer jetzt gegenüber vor etwa einer Stunde,
+  Clips der Zuschauer in den letzten 3 Stunden, bester Clip. Aktualisiert sich alle 15 Minuten (öffentliche
+  Daten, es wird nichts heruntergeladen). **Zustimmung anfragen** nimmt den Kanal auf (Modus A), erzeugt den
+  Zustimmungslink und zeigt die fertigen Nachrichten – senden musst du selbst. **Nur beobachten** nimmt ihn
+  ohne Anfrage auf.
+* Hype-Score 0–100: Wachstum 45 %, Clip-Aktivität 40 %, passende Größe 15 % (200–5000 Zuschauer). In der ersten
+  Stunde nach dem Start fehlt der Verlauf; dann entscheiden Clips und Größe.
 * Dashboard → *Öffentliche Clips*: Kanäle mit vielen, gut bewerteten Zuschauer-Clips haben das größte Potenzial.
 * Kanäle mittlerer Größe (ein paar hundert bis wenige tausend Zuschauer) antworten erfahrungsgemäß eher als sehr
   große – und profitieren am meisten von zusätzlicher Reichweite.

@@ -129,6 +129,17 @@ class Settings(BaseSettings):
     subtitles_enabled: bool = True
     subtitles_uppercase: bool = False
 
+    # --- Hype-Liste: Kanäle, die gerade wachsen (nur öffentliche Daten) ---
+    hype_enabled: bool = True
+    hype_language: str = "de"  # leer = alle Sprachen
+    hype_game_ids: str = ""  # optional: kommagetrennte Twitch-Kategorie-IDs
+    hype_min_viewers: int = Field(default=50, ge=0)
+    hype_max_viewers: int = Field(default=20000, ge=1)
+    hype_refresh_minutes: int = Field(default=15, ge=5, le=120)
+    hype_pages: int = Field(default=3, ge=1, le=10)  # je 100 Streams
+    hype_clip_checks: int = Field(default=25, ge=0, le=100)  # Clip-Abfragen je Lauf
+    hype_list_size: int = Field(default=30, ge=5, le=100)
+
     # --- Betrieb: Alarmierung und Metriken (Phase 7) ----------------------
     # Webhook für Alarme: Discord/Slack-Webhook oder beliebiger Klartext-Endpunkt (z. B. https://ntfy.sh/<topic>)
     alert_webhook_url: str = ""
@@ -333,6 +344,9 @@ class Settings(BaseSettings):
             "RENDER_PRESET": self.render_preset,
             "RENDER_CRF": self.render_crf,
             "SUBTITLES_ENABLED": self.subtitles_enabled,
+            "HYPE": f"{'an' if self.hype_enabled else 'aus'} · Sprache {self.hype_language or 'alle'} · "
+            f"{self.hype_min_viewers}–{self.hype_max_viewers} Zuschauer · "
+            f"alle {self.hype_refresh_minutes} min",
             "ALERT_WEBHOOK_URL": "gesetzt" if self.alert_webhook_url else "nicht gesetzt",
             "ALERT_CHECK_INTERVAL_MINUTES": self.alert_check_interval_minutes,
             "ALERT_REPEAT_HOURS": self.alert_repeat_hours,
