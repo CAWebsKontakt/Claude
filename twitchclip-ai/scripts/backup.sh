@@ -25,11 +25,11 @@ chmod 600 "${FILE}"
 
 # Plausibilitätsprüfung: Datei muss gültiges gzip und nicht leer sein
 gzip -t "${FILE}"
-SIZE=$(stat -c %s "${FILE}")
+SIZE=$(wc -c < "${FILE}" | tr -d " ")   # portabel (Linux und macOS)
 if [[ "${SIZE}" -lt 1024 ]]; then
-  echo "$(date -Is) FEHLER: Backup verdächtig klein (${SIZE} Bytes): ${FILE}" >&2
+  echo "$(date "+%Y-%m-%dT%H:%M:%S%z") FEHLER: Backup verdächtig klein (${SIZE} Bytes): ${FILE}" >&2
   exit 1
 fi
 
 find "${DIR}" -name 'twitchclip-*.sql.gz' -mtime "+${KEEP_DAYS}" -delete
-echo "$(date -Is) Backup ok: ${FILE} (${SIZE} Bytes)"
+echo "$(date "+%Y-%m-%dT%H:%M:%S%z") Backup ok: ${FILE} (${SIZE} Bytes)"

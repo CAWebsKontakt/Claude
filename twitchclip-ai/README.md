@@ -15,6 +15,18 @@ Docker Compose, FastAPI, PostgreSQL, Redis/RQ, FFmpeg und faster-whisper.
 | KI-Highlights, Schnitt 1080×1920, Untertitel | – | ✓ |
 | TikTok (nach manueller Freigabe) | – | ✓, wenn die Erlaubnis Veröffentlichung umfasst |
 
+## Schnellstart auf dem Mac (ohne Server, ohne Domain)
+
+Docker Desktop installieren, dann im Terminal – Details in [docs/MAC.md](docs/MAC.md):
+
+```bash
+git clone -b claude/twitchclip-ai-system-4or03e https://github.com/CAWebsKontakt/Claude.git ~/twitchclip
+cd ~/twitchclip/twitchclip-ai && bash scripts/init_env.sh --local
+docker compose up -d --build
+docker compose exec web python -m app.cli create-user --username admin --role admin
+open http://localhost:8000
+```
+
 ## Schnellstart (VPS)
 
 ```bash
@@ -41,6 +53,7 @@ sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architektur, Datenfluss, Datenmodell, Projektstruktur, Servergröße |
 | [docs/API_CONSTRAINTS.md](docs/API_CONSTRAINTS.md) | Twitch- und TikTok-Beschränkungen und wie das System damit umgeht |
+| [docs/MAC.md](docs/MAC.md) | Start auf dem eigenen Mac: Docker Desktop, Twitch-App, Mac wach halten, Tunnel für Zustimmungslinks |
 | [docs/INSTALL.md](docs/INSTALL.md) | Schritt-für-Schritt-Installation, Cron, Updates, Reboot-Test |
 | [docs/API_REGISTRATION.md](docs/API_REGISTRATION.md) | Twitch- und TikTok-App registrieren, Review/Audit |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Streamer hinzufügen, Benutzer, Überwachung, Backup, Fehlerbehebung |

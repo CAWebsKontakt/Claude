@@ -8,10 +8,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-DOMAIN="${1:-}"
-EMAIL="${2:-}"
+LOCAL=false
+if [[ "${1:-}" == "--local" ]]; then
+  # Eigener Rechner (z. B. Mac mit Docker Desktop): http://localhost:8000, ohne Domain/Caddy
+  LOCAL=true
+  DOMAIN="localhost"
+  EMAIL="lokal@localhost"
+else
+  DOMAIN="${1:-}"
+  EMAIL="${2:-}"
+fi
 if [[ -z "${DOMAIN}" || -z "${EMAIL}" ]]; then
-  echo "Aufruf: bash scripts/init_env.sh <domain> <acme-email>" >&2
+  echo "Aufruf: bash scripts/init_env.sh <domain> <acme-email>   (Server)" >&2
+  echo "        bash scripts/init_env.sh --local                 (eigener Rechner, ohne Domain)" >&2
   exit 1
 fi
 if [[ -f .env ]]; then
@@ -19,9 +28,10 @@ if [[ -f .env ]]; then
   exit 1
 fi
 
-rand() { python3 -c "import secrets;print(secrets.token_urlsafe($1).replace('-','x').replace('_','y'))"; }
-fernet() { python3 -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"; }
-hex() { python3 -c "import secrets;print(secrets.token_hex(32))"; }
+# openssl ist auf Linux-Servern und macOS vorinstalliert (python3 auf dem Mac nicht immer)
+rand() { openssl rand -base64 "$1" | tr -dc 'A-Za-z0-9'; }   # ohne head: kein SIGPIPE bei pipefail
+fernet() { openssl rand -base64 32 | tr '+/' '-_'; }
+hex() { openssl rand -hex 32; }
 
 SECRET_KEY="$(rand 48)"
 TOKEN_KEY="$(fernet)"
@@ -41,6 +51,18 @@ sed \
   -e "s|^TWITCH_EVENTSUB_SECRET=.*|TWITCH_EVENTSUB_SECRET=${EVENTSUB}|" \
   .env.example > .env
 chmod 600 .env
+
+if [[ "${LOCAL}" == "true" ]]; then
+  {
+    echo ""
+    echo "# --- Lokaler Betrieb (init_env.sh --local) ---"
+    echo "COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml"
+  } >> .env
+  bash scripts/env_set.sh APP_BASE_URL "http://localhost:8000" >/dev/null
+  bash scripts/env_set.sh APP_ENV development >/dev/null
+  bash scripts/env_set.sh SESSION_COOKIE_SECURE false >/dev/null
+  echo "✓ Lokaler Modus: Dashboard unter http://localhost:8000 (nur auf diesem Rechner erreichbar)."
+fi
 
 if grep -q "=CHANGE_ME" .env; then
   echo "Warnung: In .env stehen noch Platzhalter (CHANGE_ME):" >&2

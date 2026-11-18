@@ -1,0 +1,19 @@
+# Lokaler Betrieb auf dem eigenen Rechner (Mac/Windows/Linux mit Docker Desktop) – ohne Domain und ohne Caddy.
+#
+# Wird automatisch verwendet, wenn in der .env steht:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml
+# (setzt scripts/init_env.sh --local). Dashboard: http://localhost:8000
+#
+# Unterschiede zum Server: kein HTTPS/Caddy, Dashboard nur auf diesem Rechner erreichbar, kleinere Speichergrenzen.
+# Twitch-Live-Meldungen (EventSub) brauchen eine öffentliche HTTPS-Adresse – lokal fragt das System den
+# Live-Status stattdessen regelmäßig selbst ab.
+
+services:
+  caddy:
+    # Caddy (HTTPS für eine Domain) wird lokal nicht gestartet
+    profiles: ["server"]
+
+  worker-media:
+    deploy:
+      resources:
+        limits: { memory: "${MEDIA_WORKER_MEMORY:-3g}", cpus: "${MEDIA_WORKER_CPUS:-2.0}", pids: 512 }
