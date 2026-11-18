@@ -28,6 +28,7 @@ from app.services.clip_processing import (
     download_clip,
     ingest_samples,
     mark_failed,
+    plan_chat_spike_clips,
     plan_viewer_clips,
 )
 from app.services.streamers import RightsError, compute_rights
@@ -123,13 +124,18 @@ def plan_stream_clips_job(session_id: int, force: bool = False) -> dict:
         except TwitchError as exc:
             logger.warning("Clip-Suche vor der Planung fehlgeschlagen", extra={"error": str(exc)})
         try:
-            requests = plan_viewer_clips(db, settings, db.get(StreamSession, session_id))
+            session = db.get(StreamSession, session_id)
+            requests = plan_viewer_clips(db, settings, session)
+            spike_requests = plan_chat_spike_clips(db, settings, session)
         except RightsError:
             return {"skipped": "keine Verarbeitungsrechte"}
         ids = [r.id for r in requests]
+        spike_ids = [r.id for r in spike_requests]
     for request_id in ids:
         schedule_download(request_id)  # Zuschauer-Clips existieren bereits – direkt herunterladen
-    return {"planned": ids}
+    for request_id in spike_ids:
+        schedule_create(request_id)  # neue Clips an Chat-Spitzen aus dem VOD erzeugen
+    return {"planned": ids, "chat_spikes": spike_ids}
 
 
 def _handle_twitch_error(db, request: ClipRequest, exc: TwitchError) -> str:
@@ -202,7 +208,12 @@ def download_clip_job(request_id: int, attempt: int = 1) -> dict:
             return {"error": str(exc)}
         if result is None:
             return {"skipped": "Rechte"}
-        return {"downloaded": str(result.path), "duplicate_of": result.duplicate_of}
+        duplicate_of = result.duplicate_of
+    if duplicate_of is None:
+        from app.workers.jobs.analysis import schedule_analysis
+
+        schedule_analysis(request_id)
+    return {"downloaded": str(result.path), "duplicate_of": duplicate_of}
 
 
 def ingest_samples_job() -> dict:
@@ -211,8 +222,12 @@ def ingest_samples_job() -> dict:
     if not settings.test_mode:
         return {"skipped": True}
     with session_scope() as db:
-        created = ingest_samples(db, settings)
-        return {"ingested": [r.id for r in created]}
+        ids = [r.id for r in ingest_samples(db, settings)]
+    from app.workers.jobs.analysis import schedule_analysis
+
+    for request_id in ids:
+        schedule_analysis(request_id)
+    return {"ingested": ids}
 
 
 def resume_stuck_requests_job() -> dict:

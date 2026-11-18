@@ -31,6 +31,24 @@ STATUS_KEY = "tcai:twitch:status"
 ONLINE_GRACE = timedelta(minutes=5)
 HEALTHY_SUB_STATUSES = {"enabled", "webhook_callback_verification_pending"}
 REVOKE_TYPE = "user.authorization.revoke"
+CHAT_TYPE = "channel.chat.message"
+MANAGED_BROADCASTER_TYPES = (*SUBSCRIBED_TYPES, CHAT_TYPE)
+CHAT_SCOPES_REQUIRED = {"user:read:chat", "user:bot"}
+
+
+def _chat_reader(streamer: Streamer) -> str | None:
+    """Twitch-Nutzer, der für den Kanal mitlesen darf: der Kanalinhaber mit Chat-Scopes (Modus B)."""
+    if streamer.mode != "authorized":
+        return None
+    for token in streamer.oauth_tokens:
+        if (
+            token.provider == "twitch"
+            and token.revoked_at is None
+            and token.external_user_id == streamer.twitch_user_id
+            and set(token.scopes or []) >= CHAT_SCOPES_REQUIRED
+        ):
+            return token.external_user_id
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -351,16 +369,22 @@ def sync_eventsub(db: Session, client: HelixClient, settings: Settings) -> SyncR
     callback = settings.eventsub_callback_url
 
     desired: dict[tuple[str, str], Streamer] = {}
+    conditions: dict[tuple[str, str], dict[str, str]] = {}
     if report.webhooks_active:
         for streamer in db.scalars(
             select(Streamer).where(Streamer.is_active.is_(True), Streamer.twitch_user_id.is_not(None))
         ):
             for sub_type in SUBSCRIBED_TYPES:
                 desired[(sub_type, streamer.twitch_user_id)] = streamer
+            chat_user = _chat_reader(streamer) if settings.chat_stats_enabled else None
+            if chat_user:
+                key = (CHAT_TYPE, streamer.twitch_user_id)
+                desired[key] = streamer
+                conditions[key] = {"broadcaster_user_id": streamer.twitch_user_id, "user_id": chat_user}
 
     kept_remote: dict[tuple[str, str], object] = {}
     for sub in listing.subscriptions:
-        if sub.type not in SUBSCRIBED_TYPES:
+        if sub.type not in MANAGED_BROADCASTER_TYPES:
             continue
         key = (sub.type, sub.broadcaster_user_id or "")
         healthy = sub.status in HEALTHY_SUB_STATUSES and sub.callback == callback
@@ -384,7 +408,9 @@ def sync_eventsub(db: Session, client: HelixClient, settings: Settings) -> SyncR
             break
         sub_type, broadcaster_id = key
         try:
-            info, totals = client.create_eventsub(sub_type, broadcaster_id, callback, secret)
+            info, totals = client.create_eventsub(
+                sub_type, broadcaster_id, callback, secret, condition=conditions.get(key)
+            )
             kept_remote[key] = info
             report.created += 1
             report.total_cost = totals["total_cost"] or report.total_cost + info.cost

@@ -277,7 +277,7 @@
         <td data-label="Ausschnitt">{% if r.start_seconds is not none %}{{ r.start_seconds | seconds }} – {{ r.vod_offset | seconds }}{% elif r.duration %}{{ r.duration | seconds }}{% else %}–{% endif %}</td>
         <td data-label="Status">
           {% set tones = {"downloaded": "good", "failed": "bad", "skipped": "warn", "duplicate": "neutral"} %}
-          {{ m.badge(CLIP_STATUS_LABELS.get(r.status, r.status), tones.get(r.status, "info")) }}
+          {% if r.analyzed_at %}{{ m.badge("Analysiert", "good") }}{% else %}{{ m.badge(CLIP_STATUS_LABELS.get(r.status, r.status), tones.get(r.status, "info")) }}{% endif %}
           {% if r.error %}<div class="muted small wrap">{{ r.error }}</div>{% endif %}
           {% if current_user.can_edit and r.status in ["skipped", "failed"] and r.source != "sample" %}
           <form method="post" action="/streamers/{{ streamer.id }}/clip-requests/{{ r.id }}/retry">

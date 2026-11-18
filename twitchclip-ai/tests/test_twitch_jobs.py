@@ -32,7 +32,11 @@ def test_scheduler_includes_twitch_jobs_only_when_configured(settings, twitch_se
     from app.config import Settings
 
     plain = Settings(_env_file=None, app_env="test", twitch_client_id="", twitch_client_secret="")
-    assert {j.name for j in scheduler.build_periodic_jobs(plain)} == {"storage_cleanup", "prune_activity"}
+    assert {j.name for j in scheduler.build_periodic_jobs(plain)} == {
+        "storage_cleanup",
+        "prune_activity",
+        "analysis_pending",
+    }
     names = {j.name for j in scheduler.build_periodic_jobs(twitch_settings)}
     assert {"twitch_poll_live", "twitch_eventsub_sync", "twitch_discover_clips", "twitch_resolve"} <= names
     poll = next(j for j in scheduler.build_periodic_jobs(twitch_settings) if j.name == "twitch_poll_live")

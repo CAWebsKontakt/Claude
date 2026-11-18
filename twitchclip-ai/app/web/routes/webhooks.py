@@ -17,6 +17,7 @@ from app.integrations.twitch.eventsub import (
     verify_and_parse,
 )
 from app.redis_client import get_redis
+from app.services.chat_stats import record_chat_message
 from app.services.eventsub_handler import FollowUps, handle_message
 from app.services.twitch_monitor import mark_subscription_status
 from app.workers.jobs.twitch import schedule_eventsub_sync, schedule_post_stream, schedule_stream_details
@@ -65,7 +66,23 @@ async def twitch_eventsub(request: Request) -> Response:
         await run_in_threadpool(_mark_verified, message.subscription_id)
         return PlainTextResponse(message.challenge or "", status_code=200)
 
-    if is_duplicate(get_redis(), message.message_id):
+    redis = get_redis()
+    if is_duplicate(redis, message.message_id):
+        return Response(status_code=204)
+
+    if message.subscription_type == "channel.chat.message":
+        # Hochfrequent: nur Zähler in Redis, keine Datenbank, keine Texte speichern
+        if settings.chat_stats_enabled:
+            event = message.event
+            fragments = (event.get("message") or {}).get("fragments") or []
+            await run_in_threadpool(
+                record_chat_message,
+                redis,
+                str(event.get("broadcaster_user_id") or ""),
+                str(event.get("chatter_user_id") or ""),
+                (event.get("message") or {}).get("text") or "",
+                sum(1 for f in fragments if f.get("type") == "emote"),
+            )
         return Response(status_code=204)
 
     follow = await run_in_threadpool(_process, message)

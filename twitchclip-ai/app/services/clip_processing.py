@@ -130,6 +130,51 @@ def plan_viewer_clips(db: Session, settings: Settings, session: StreamSession) -
     return created
 
 
+def plan_chat_spike_clips(db: Session, settings: Settings, session: StreamSession) -> list[ClipRequest]:
+    """Zusätzliche Kandidaten an Chat-Spitzen, die nicht schon durch Zuschauer-Clips abgedeckt sind."""
+    from app.services import chat_stats
+
+    streamer = db.get(Streamer, session.streamer_id)
+    if streamer is None or not session.vod_id or not settings.chat_stats_enabled:
+        return []
+    existing = db.scalars(select(ClipRequest).where(ClipRequest.stream_session_id == session.id)).all()
+    budget = settings.clip_candidates_per_stream - len(existing)
+    if budget <= 0:
+        return []
+    buckets = chat_stats.session_buckets(db, session)
+    spikes = chat_stats.find_spikes(buckets, session, settings.chat_spike_factor, limit=budget)
+    created: list[ClipRequest] = []
+    duration = settings.clip_duration_max
+    for spike in spikes:
+        # Chat reagiert verzögert: Ausschnitt endet kurz nach der Spitze
+        start = max(0, int(spike) - duration + 8)
+        end = start + duration
+        if any(
+            r.vod_offset and abs((r.vod_offset - (r.duration or 0) / 2) - (start + duration / 2)) < 45
+            for r in existing
+        ):
+            continue
+        try:
+            created.append(
+                request_vod_clip(
+                    db,
+                    streamer,
+                    session,
+                    start_seconds=start,
+                    duration=duration,
+                    actor=None,
+                    source=ClipRequestSource.VOD_WINDOW,
+                    title=f"{streamer.name} – Chat-Highlight",
+                    reason={"chat_spike_vod_seconds": spike},
+                )  # fmt: skip
+            )
+        except ClipRequestError:
+            continue
+        if end and len(created) >= budget:
+            break
+    return created
+
+
 def format_timecode(seconds: int) -> str:
     return f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
 

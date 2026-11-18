@@ -127,6 +127,31 @@ Dashboard: Ausschnitt anfordern ─► Create Clip From VOD ─► (30 s) Downlo
   Duplikate, ffprobe prüft Dauer/Auflösung/Ton.
 * Twitch-Fehler 403 bei einem Editor-Token → Token wird gesperrt (Konto ist offenbar kein Editor).
 
+### KI-Highlight-Erkennung (Phase 4)
+
+Je heruntergeladenem Clip (Media-Worker, ein Job gleichzeitig, ca. 3 s Rechenzeit je 60 s Video ohne Whisper):
+
+| Signal | Verfahren | Ergebnis je Sekunde |
+|---|---|---|
+| Ton | FFmpeg → 16-kHz-Mono-WAV, RMS-Pegel in 0,5-s-Fenstern (numpy), Abstand zum Median + plötzlicher Anstieg | Aufregung 0–1, Ausbrüche (Schreie, Jubel, Lachen) |
+| Sprache | faster-whisper (lokal, `WHISPER_MODEL`, int8), Wort-Zeitstempel; Schlüsselwörter (de/en), Ausrufe, Lachen, GROSSSCHREIBUNG | Aufregung 0–1, Wörter für Untertitel |
+| Bild | OpenCV, 2 Bilder/s: Bewegung (Frame-Differenz), Szenenwechsel (Histogramm), Facecam (Haar-Gesichtserkennung, stabile Position) | Bewegung 0–1, Facecam-Box |
+| Chat | EventSub `channel.chat.message` → Zähler je 10 s (Nachrichten, verschiedene Absender, Emotes, Hype-Wörter) | Verhältnis zum Median des Streams |
+| Zuschauer | Bewertung des Zuschauer-Clips aus Phase 2 | 0–1 |
+
+* **Fensterwahl:** gleitendes Fenster der Länge `CLIP_DURATION_MAX` über `0,45·Ton + 0,35·Sprache + 0,2·Bild`
+  (Spitzen stärker gewichtet), ruhige Anfangssekunden werden bis `CLIP_DURATION_MIN` abgeschnitten.
+* **Bewertung 0–100:** Ton 25 %, Sprache 20 %, Chat 20 %, Bild 15 %, Zuschauer 10 %, Länge 10 %. Fehlende
+  Signale (z. B. kein Chat-Zugriff, Whisper aus) werden auf die vorhandenen umverteilt und im Dashboard als
+  „nicht verfügbar“ ausgewiesen.
+* **Duplikate:** gleicher VOD-Bereich (> 50 % Überlappung) oder gleiche Bild-Hashes (dHash bei 25/50/75 %,
+  Abstand ≤ `DUPLICATE_HASH_DISTANCE`) **und** gleicher Lautheitsverlauf (Korrelation ≥ 0,85); 14 Tage rückwirkend.
+* **Auswahl:** je Stream die besten `HIGHLIGHTS_PER_STREAM_MAX` mit Bewertung ≥ `MIN_HIGHLIGHT_SCORE`, höchstens
+  `MAX_CLIPS_PER_DAY` pro Kalendertag; erst wenn alle Clips des Streams analysiert sind. Manuell verworfene
+  Highlights bleiben verworfen.
+* **Chat-Spitzen** (≥ `CHAT_SPIKE_FACTOR` × Median), die kein Zuschauer-Clip abdeckt, werden als zusätzliche
+  Kandidaten per Create Clip From VOD erzeugt.
+
 ## 4. Datenmodell (Migration `0001`)
 
 | Tabelle | Inhalt / wichtige Eindeutigkeiten |
@@ -172,6 +197,8 @@ Alle Zeitstempel werden in UTC gespeichert und im Dashboard in `TIMEZONE` (Europ
   | `twitch_validate_tokens` | 1 h | Nutzer-Tokens bei Twitch validieren, erneuern oder sperren |
   | `clips_resume_stuck` | 30 min | Clip-Aufträge ohne laufenden Job (z. B. nach Redis-Neustart) wieder anstoßen |
   | `samples_ingest` | 5 min | nur `TEST_MODE=true`: neue Dateien aus `/data/samples` übernehmen |
+  | `chat_flush` | 1 min | Chat-Zähler aus Redis in `chat_activity` übertragen (nur Zählwerte) |
+  | `analysis_pending` | 10 min | Sicherheitsnetz: heruntergeladene, noch nicht analysierte Clips einreihen |
 
   Twitch-Jobs werden nur eingeplant, wenn Client-ID/Secret gesetzt sind und `TEST_MODE=false` ist.
   Ereignisgesteuert: nach `stream.online` Details nachladen (60 s), nach `stream.offline` VOD zuordnen (3 min,
@@ -221,7 +248,7 @@ twitchclip-ai/
 ├── .env.example                  ✓ sichere Vorlage (keine echten Geheimnisse)
 ├── requirements*.txt, pyproject.toml, alembic.ini   ✓
 ├── deploy/Caddyfile              ✓ HTTPS + Reverse-Proxy
-├── migrations/                   ✓ Alembic (0001 Schema, 0002 Twitch-Überwachung, 0003 Autorisierung & Clips)
+├── migrations/                   ✓ Alembic (0001 Schema, 0002 Twitch, 0003 Autorisierung & Clips, 0004 KI-Analyse)
 ├── scripts/                      ✓ install_vps, init_env, backup, restore, healthcheck, update
 ├── docs/                         ✓ Architektur, API-Grenzen, Installation, Registrierung, Betrieb, Tests
 ├── tests/                        ✓ pytest (SQLite/PostgreSQL, fakeredis, später respx-Mocks)
@@ -232,16 +259,17 @@ twitchclip-ai/
     ├── security/                 ✓ crypto (Fernet), passwords (Argon2), csrf, ratelimit
     ├── services/                 ✓ activity, users, streamers (Rechte), permissions, storage, system,
     │                               ✓ twitch_monitor, eventsub_handler, clip_discovery, clip_scoring,
-    │                               ✓ twitch_authorization, clip_processing, media_probe, samples, processing_keys
+    │                               ✓ twitch_authorization, clip_processing, media_probe, samples, processing_keys,
+    │                               ✓ highlight_analysis (Analyse, Duplikate, Auswahl), chat_stats
     ├── workers/                  ✓ queues, worker, scheduler, jobs/maintenance
     │   └── jobs/twitch.py        ✓  Streamer auflösen, Live-Status, Clip-Suche, EventSub-Abgleich, VOD-Zuordnung
     │   └── jobs/clips.py         ✓  Kandidaten planen, Clip aus VOD erzeugen, Download, Testmodus-Import
-    │   └── jobs/analysis.py      4  KI-Analyse und Auswahl
+    │   └── jobs/analysis.py      ✓  KI-Analyse, Auswahl je Stream, Chat-Zähler übertragen
     │   └── jobs/render.py        5  Schnitt, Untertitel, Metadaten
     │   └── jobs/publish.py       6  TikTok-Upload und Statusverfolgung
     ├── integrations/twitch/      ✓  Helix-Client, App-Token, Nutzer-OAuth, EventSub, Rate-Limit
     ├── integrations/tiktok/      6  OAuth (PKCE), Creator-Info, Direct Post / Inbox-Upload, Status
-    ├── ai/                       4  audio, transcribe (faster-whisper), vision (OpenCV), chat_signals, scoring, dedup
+    ├── ai/                       ✓  audio (FFmpeg/numpy), transcribe (faster-whisper), vision (OpenCV), scoring
     ├── media/                    5  layout (Facecam/Gameplay), subtitles (ASS), render (FFmpeg), metadata
     └── web/                      ✓ routes/, templates/, static/ (mobiloptimiert, ohne externe CDNs)
         └── routes/webhooks.py    ✓  EventSub-Endpunkt

@@ -383,6 +383,7 @@ class ClipRequest(TimestampMixin, Base):
     media_info: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    analyzed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     requested_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -427,6 +428,10 @@ class Highlight(TimestampMixin, Base):
     # Duplikaterkennung: exakter Inhalts-Hash + perzeptueller Hash
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     perceptual_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Gruppe für die Auswahl der besten 3–5 (z. B. "session-12" oder "samples-3-2026-11-18")
+    selection_group: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Analyse-Details für Schnitt/Untertitel: Facecam-Box, Wörter mit Zeitstempeln, Signalverläufe
+    analysis: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default=HighlightStatus.CANDIDATE.value, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

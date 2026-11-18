@@ -213,6 +213,14 @@ Werden in Phase 6 im Freigabeformular umgesetzt:
   Codeänderung. Beim ersten echten Aufruf zeigt das Aktivitätsprotokoll eine eventuelle 404-Meldung.
 * Nutzer-Tokens haben ein eigenes Rate-Limit je Nutzer (`tcai:twitch:ratelimit:user:<id>`).
 
+## Umsetzung Phase 4 (Chat-Statistik)
+
+* Abo `channel.chat.message` (Version 1) je Streamer mit Bedingung `broadcaster_user_id` = Kanal und
+  `user_id` = Kanalinhaber – nur wenn dieser bei der Autorisierung `user:read:chat` und `user:bot` (sowie
+  `channel:bot`) erlaubt hat. Ohne diese Scopes läuft die Bewertung ohne Chat-Signal.
+* Jede Chat-Nachricht ist ein eigener Webhook-Aufruf. Der Webhook zählt nur in Redis (keine Datenbank, keine
+  Texte, keine Namen; Absender als gesalzener Hash nur für die Anzahl verschiedener Chatter).
+
 ## Teil 3 – Was daraus für das System folgt
 
 | Einschränkung | Umsetzung |

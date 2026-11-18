@@ -103,6 +103,14 @@ class Settings(BaseSettings):
     whisper_model: str = "small"
     whisper_device: Literal["cpu", "cuda", "auto"] = "cpu"
     whisper_compute_type: str = "int8"
+    # Spracherkennung abschaltbar (z. B. sehr kleiner VPS); dann zählen nur Ton, Bild und Chat
+    analysis_transcription: bool = True
+    # Chat-Statistik (nur Zählwerte) für Streamer, die die Chat-Scopes erlaubt haben
+    chat_stats_enabled: bool = True
+    # Ab diesem Vielfachen des Medians gilt eine Chat-Spitze als Highlight-Kandidat
+    chat_spike_factor: float = Field(default=2.5, ge=1.2, le=20)
+    # Ähnlichkeitsgrenze für Duplikate (Hamming-Abstand der Bild-Hashes, 0–64)
+    duplicate_hash_distance: int = Field(default=10, ge=0, le=32)
 
     # --- Testmodus -------------------------------------------------------
     # Verarbeitet nur lokale Beispieldateien, ruft keine externen APIs auf.
@@ -251,6 +259,11 @@ class Settings(BaseSettings):
     def samples_dir(self) -> Path:
         return self.data_dir / "samples"
 
+    @property
+    def models_dir(self) -> Path:
+        """Whisper-Modelle (Cache, wird nicht automatisch gelöscht)."""
+        return self.data_dir / "models"
+
     def managed_dirs(self) -> list[Path]:
         return [self.tmp_dir, self.downloads_dir, self.renders_dir, self.exports_dir, self.samples_dir]
 
@@ -286,6 +299,10 @@ class Settings(BaseSettings):
             "TIKTOK_CLIENT_KEY": "gesetzt" if self.tiktok_client_key else "nicht gesetzt",
             "TIKTOK_DIRECT_POST_ENABLED": self.tiktok_direct_post_enabled,
             "WHISPER_MODEL": self.whisper_model,
+            "ANALYSIS_TRANSCRIPTION": self.analysis_transcription,
+            "CHAT_STATS_ENABLED": self.chat_stats_enabled,
+            "CHAT_SPIKE_FACTOR": self.chat_spike_factor,
+            "DUPLICATE_HASH_DISTANCE": self.duplicate_hash_distance,
             "TEST_MODE": self.test_mode,
         }
 

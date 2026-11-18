@@ -66,7 +66,9 @@ def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
             PeriodicJob("twitch_prune_clips", f"{TWITCH_JOBS}.prune_twitch_clips_job", 86400),
             PeriodicJob("twitch_validate_tokens", f"{TWITCH_JOBS}.validate_twitch_tokens_job", 3600),
             PeriodicJob("clips_resume_stuck", "app.workers.jobs.clips.resume_stuck_requests_job", 1800),
+            PeriodicJob("chat_flush", "app.workers.jobs.analysis.flush_chat_job", 60),
         ]
+    jobs.append(PeriodicJob("analysis_pending", "app.workers.jobs.analysis.analyze_pending_job", 600))
     if settings.test_mode:
         jobs.append(PeriodicJob("samples_ingest", "app.workers.jobs.clips.ingest_samples_job", 300))
     return tuple(jobs)

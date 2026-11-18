@@ -2,7 +2,7 @@
 
 ## Automatisierte Tests
 
-Die Suite (179 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+Die Suite (193 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
 (Twitch, ab Phase 6 TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
@@ -40,6 +40,7 @@ docker compose --profile test run --rm --build test
 | `test_twitch_jobs.py` | Jobs ohne Konfiguration/Testmodus, Scheduler, Folgejobs, gedrosselte Fehler, Rate-Limit-Abbruch, Dashboard |
 | `test_twitch_authorization.py` | Einladungslink (Signatur, Ablauf, einmalig), kompletter OAuth-Ablauf über HTTP, Editor-Rolle, fehlende Scopes, Token-Erneuerung/-Sperre, stündliche Validierung, EventSub-Widerruf, Trennen im Dashboard |
 | `test_clip_processing.py` | Zeitangaben, Kandidatenauswahl ohne Überlappung, Rechteprüfung vor jedem Schritt, Clip aus VOD (Parameter), Download ohne Token zum CDN, SHA-256-Duplikate, Größenlimit, Wiederholungen, 403 bei Editor, Testmodus mit echten FFmpeg-Beispielvideos, Neustart nach Re-Autorisierung |
+| `test_analysis.py` | Ton-Ausbrüche, Sprachsignale, Fensterwahl, Bewertung mit Umverteilung, Bild-Hashes, Facecam-Erkennung, Chat-Zähler ohne Texte, Chat-Spitzen als Kandidaten, Chat-Abo, Auswahl der besten N mit Schwelle und Tageslimit, Analyse echter FFmpeg-Testvideos, Duplikat gleicher VOD-Moment |
 
 ## Phase 1 – Abnahme auf dem VPS
 
@@ -179,6 +180,35 @@ docker compose exec worker python -m app.cli ingest-samples      # "2 Beispielda
 # Dashboard → Streamer → "Testmodus (Beispieldateien)" → Clip-Aufträge "Bereit für Analyse"
 sed -i 's/^TEST_MODE=.*/TEST_MODE=false/' .env && docker compose up -d   # wieder Normalbetrieb
 ```
+
+## Phase 4 – Abnahme auf dem VPS (KI-Highlight-Erkennung)
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git am /pfad/TwitchClip-Phase-4.patch && docker compose up -d --build   # Image enthält jetzt OpenCV + faster-whisper
+docker compose logs migrate | grep 0004
+docker compose --profile test run --rm --build test                   # alle Tests bestanden
+
+# 1. Whisper-Modell vorab laden (einmalig, ~480 MB für "small")
+docker compose exec worker-media python -c "from app.ai.transcribe import WhisperTranscriber; from app.config import get_settings; WhisperTranscriber(get_settings()); print('Modell bereit')"
+
+# 2. Testmodus: Analyse mit Beispielvideos (ohne Twitch, ohne fremde Rechte)
+sed -i 's/^TEST_MODE=.*/TEST_MODE=true/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGHT_SCORE=30/' .env && docker compose up -d
+docker compose exec worker-media python -m app.cli make-samples --count 3 --duration 60
+docker compose exec worker python -m app.cli ingest-samples
+sleep 60
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select id, round(score::numeric,1) as score, start_seconds, end_seconds, status, left(error,60) from highlights order by id;"
+#   erwartet: je Video ein Highlight, Fenster 20–45 s um die lauten Stellen, Status "candidate"
+
+# 3. Dashboard → Highlights → Highlight öffnen: Bewertung im Detail, KI-Analyse, Vorschau des Ausschnitts
+# 4. Zurück zum Normalbetrieb
+sed -i 's/^TEST_MODE=.*/TEST_MODE=false/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGHT_SCORE=60/' .env && docker compose up -d
+```
+
+Mit einem autorisierten Kanal (Phase 3) läuft dieselbe Analyse automatisch nach jedem Stream; mit erlaubter
+Chat-Statistik erscheint zusätzlich „Chat-Reaktion“ in der Bewertung, und Chat-Spitzen werden zu eigenen
+Kandidaten (Clip-Aufträge „Aus VOD (automatisch)“).
 
 ## Lokale Entwicklung ohne Docker
 

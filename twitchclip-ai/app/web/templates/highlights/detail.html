@@ -19,6 +19,11 @@
         {% if video.thumbnail_path %}poster="/media/thumbnails/{{ video.id }}.jpg"{% endif %}></video>
       <p class="muted small">{{ video.width }}×{{ video.height }} · {{ video.duration | seconds }} · {{ video.size_bytes | filesize }}
         · <a href="/media/videos/{{ video.id }}/download">Herunterladen</a></p>
+    {% elif highlight.clip_request_id %}
+      <video class="vertical-video source-video" controls preload="metadata" playsinline
+        src="/media/clips/{{ highlight.clip_request_id }}.mp4#t={{ highlight.start_seconds }},{{ highlight.end_seconds }}"></video>
+      <p class="muted small">Quell-Clip, gewählter Ausschnitt {{ highlight.start_seconds | seconds }}–{{ highlight.end_seconds | seconds }}.
+        Das Hochformat-Video entsteht im nächsten Schritt (Schnitt &amp; Untertitel).</p>
     {% else %}
       {{ m.empty("Noch kein geschnittenes Video vorhanden.") }}
     {% endif %}
@@ -31,7 +36,8 @@
       <dt>Ausschnitt</dt><dd>{{ highlight.start_seconds | seconds }} – {{ highlight.end_seconds | seconds }} ({{ highlight.duration | seconds }})</dd>
       <dt>Sprache</dt><dd>{{ highlight.language or "–" }}</dd>
       <dt>Hashtags</dt><dd>{% for tag in highlight.hashtags %}<span class="tag">#{{ tag }}</span> {% else %}–{% endfor %}</dd>
-      {% if highlight.error %}<dt>Fehler</dt><dd class="text-bad wrap">{{ highlight.error }}</dd>{% endif %}
+      {% if highlight.error %}<dt>{{ "Hinweis" if highlight.status in ["rejected", "duplicate"] else "Fehler" }}</dt>
+        <dd class="wrap {{ '' if highlight.status in ['rejected', 'duplicate'] else 'text-bad' }}">{{ highlight.error }}</dd>{% endif %}
     </dl>
     {% if highlight.description %}<h3>Beschreibung</h3><p class="preline">{{ highlight.description }}</p>{% endif %}
     {% if highlight.score_breakdown %}
@@ -51,6 +57,20 @@
     {% endif %}
   </section>
 </div>
+
+{% set a = highlight.analysis or {} %}
+{% if a %}
+<section class="card">
+  <h2>KI-Analyse</h2>
+  <dl class="kv">
+    <dt>Spracherkennung</dt><dd>{{ "ja (" ~ (highlight.language or "?") ~ ", " ~ (a.words | length) ~ " Wörter)" if a.transcribed else "nicht verfügbar" }}</dd>
+    <dt>Facecam</dt><dd>{% if a.facecam %}erkannt (Position {{ (a.facecam.x * 100) | round | int }} %/{{ (a.facecam.y * 100) | round | int }} %, Sicherheit {{ (a.facecam.confidence * 100) | round | int }} %){% else %}nicht erkannt – Hochformat ohne Facecam-Bereich{% endif %}</dd>
+    <dt>Ton-Ausbrüche</dt><dd>{{ a.audio_spikes | join(" s, ") ~ " s" if a.audio_spikes else "keine" }}</dd>
+    <dt>Szenenwechsel</dt><dd>{{ a.scene_cuts | length }}</dd>
+    <dt>Auswahlgruppe</dt><dd>{{ highlight.selection_group or "–" }}</dd>
+  </dl>
+</section>
+{% endif %}
 
 {% if highlight.transcript %}
 <section class="card">

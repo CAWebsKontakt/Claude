@@ -71,6 +71,8 @@ docker compose exec worker python -c "from app.workers.jobs.twitch import discov
 | Clip-Auftrag „Fehlgeschlagen … HTTP 404“ | Pfad des Clip-Endpunkts geändert? `TWITCH_VOD_CLIP_PATH`/`TWITCH_CLIP_DOWNLOAD_PATH` mit der Twitch-Referenz abgleichen |
 | „Zugriff verweigert (403)“ beim Editor | Das autorisierende Konto ist kein Editor des Kanals → Streamer selbst autorisieren lassen |
 | Kein VOD gefunden | Beim Streamer muss „Vergangene Übertragungen speichern“ aktiviert sein |
+| Highlights ohne Transkript („Sprache … nicht verfügbar“) | Whisper-Modell nicht ladbar (huggingface.co erreichbar?) – `docker compose logs worker-media \| grep Spracherkennung` |
+| Media-Worker wird beendet (OOM) | `MEDIA_WORKER_MEMORY` erhöhen oder kleineres `WHISPER_MODEL` wählen |
 
 ## 3. Clip-Verarbeitung (Modus B)
 
@@ -98,7 +100,30 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
 (`docker compose cp mein-video.mp4 worker:/data/samples/`). Sie erscheinen beim Demo-Kanal „Testmodus
 (Beispieldateien)“. Im Testmodus ruft das System **keine** Twitch-API auf.
 
-## 4. Benutzer
+## 4. KI-Highlight-Erkennung
+
+* Jeder heruntergeladene Clip wird automatisch analysiert (Media-Worker). Ergebnis: Dashboard → *Highlights*
+  mit Bewertung 0–100, Begründung, Transkript, erkannter Facecam und Vorschau des gewählten Ausschnitts.
+* Je Stream bleiben die besten 3–5 als „Kandidat“ stehen; die übrigen werden mit Begründung verworfen
+  („unter MIN_HIGHLIGHT_SCORE“, „nicht unter den besten 5“, „Tageslimit“). Verwerfen/Wiederherstellen per Hand
+  ist jederzeit möglich.
+* **Whisper-Modell:** wird beim ersten Analysejob automatisch nach `/data/models` geladen (`small` ≈ 480 MB,
+  benötigt Zugriff auf huggingface.co). Vorab laden:
+
+  ```bash
+  docker compose exec worker-media python -c "from app.ai.transcribe import WhisperTranscriber; from app.config import get_settings; WhisperTranscriber(get_settings()); print('Modell bereit')"
+  ```
+
+  Kleinere Server: `WHISPER_MODEL=base` oder `tiny`; ganz ohne Spracherkennung: `ANALYSIS_TRANSCRIPTION=false`.
+* **Testmodus:** Beispielvideos haben keinen Chat und keine Zuschauer-Signale; für eine aussagekräftige
+  Vorschau `MIN_HIGHLIGHT_SCORE=30` setzen.
+* Analyse manuell anstoßen:
+
+  ```bash
+  docker compose exec worker python -c "from app.workers.jobs.analysis import analyze_pending_job as j; print(j())"
+  ```
+
+## 5. Benutzer
 
 * Dashboard → *Benutzer* (nur Admins): anlegen, Rolle ändern, deaktivieren, Passwort setzen.
 * Rollen: **Administrator** (alles), **Redakteur** (Streamer, Rechte, Highlights, Freigaben), **Betrachter** (lesen).
@@ -108,7 +133,7 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
   docker compose exec web python -m app.cli reset-password --username admin
   ```
 
-## 5. Überwachung
+## 6. Überwachung
 
 | Was | Wie |
 |---|---|
@@ -142,7 +167,7 @@ for name in ALL_QUEUES:
 PY
 ```
 
-## 6. Speicher
+## 7. Speicher
 
 * Automatisch: stündliche Bereinigung (`STORAGE_RETENTION_DAYS`, `STORAGE_MAX_GB`), Videos in offener Freigabe
   bleiben geschützt. Docker-Logs sind auf 5 × 10 MB je Container begrenzt.
@@ -154,7 +179,7 @@ PY
   docker image prune -f                                                    # alte Images
   ```
 
-## 7. Sicherung und Wiederherstellung
+## 8. Sicherung und Wiederherstellung
 
 ```bash
 bash scripts/backup.sh                                     # sofortiges Backup nach ./backups
@@ -163,7 +188,7 @@ bash scripts/restore.sh backups/twitchclip-YYYYMMDD-HHMMSS.sql.gz
 
 Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTION_KEY`) – getrennt voneinander.
 
-## 8. Schlüssel rotieren
+## 9. Schlüssel rotieren
 
 * `SECRET_KEY` ändern → alle Benutzer werden abgemeldet. `docker compose up -d`.
 * `TOKEN_ENCRYPTION_KEY` rotieren:
@@ -176,7 +201,7 @@ Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTI
   # danach in .env nur noch TOKEN_ENCRYPTION_KEY=<NEU>, erneut docker compose up -d
   ```
 
-## 9. Fehlerbehebung
+## 10. Fehlerbehebung
 
 | Symptom | Ursache / Lösung |
 |---|---|
