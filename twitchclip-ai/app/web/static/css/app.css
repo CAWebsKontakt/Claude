@@ -303,3 +303,4 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .error-code { font-size: 3rem; font-weight: 800; color: var(--accent); margin: 0; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+[hidden] { display: none !important; }

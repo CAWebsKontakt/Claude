@@ -30,6 +30,7 @@ from app.web.routes import (
     publishing,
     streamers,
     system,
+    tiktok,
     users,
     webhooks,
 )
@@ -89,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         streamers,
         highlights,
         publishing,
+        tiktok,
         activity,
         users,
         system,

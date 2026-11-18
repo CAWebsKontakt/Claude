@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import ClipRequest, RenderedVideo, User
+from app.models import ClipRequest, PublishJob, RenderedVideo, User
 from app.services.storage import is_within
 from app.web.deps import require_user
 
@@ -103,5 +103,25 @@ def subtitles_file(
         path,
         media_type="application/x-subrip",
         filename=f"twitchclip-{video.highlight_id}-{video.id}.srt",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.get("/exports/{job_id}.zip")
+def export_file(
+    job_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Manueller TikTok-Export (Video, Beschreibung, Untertitel, Hinweise)."""
+    job = db.get(PublishJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Export nicht gefunden")
+    path = _safe_file(settings, job.export_path)
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"tiktok-export-{job.id}.zip",
         headers={"Cache-Control": "private, no-store"},
     )

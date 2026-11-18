@@ -47,7 +47,7 @@ docker compose exec web python -m app.cli create-user --username admin --role ad
 | 3 | Twitch-OAuth für Streamer/Editoren, Clip aus VOD, Clip-Download, Idempotenz, Testmodus-Beispieldateien | ✅ fertig |
 | 4 | KI-Highlight-Erkennung (Whisper, Audio, OpenCV, Chat, Duplikate, Score 0–100) | ✅ fertig |
 | 5 | Vertikaler Schnitt, Facecam-Layout, Untertitel, Titel/Beschreibung/Hashtags | ✅ fertig |
-| 6 | TikTok-OAuth, Creator-Info, Freigabe nach UX-Richtlinien, Upload, Status | geplant |
+| 6 | TikTok-OAuth (PKCE), Creator-Info, Freigabe nach UX-Richtlinien, Upload in Stücken, Status, Export | ✅ fertig |
 | 7 | Testmodus mit Beispieldateien, End-to-End-Tests, Produktionshärtung | geplant |
 
 ## Lizenz und Verantwortung

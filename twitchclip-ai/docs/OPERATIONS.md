@@ -135,7 +135,28 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
 * Rechenzeit (4 vCPU, `RENDER_PRESET=medium`): etwa 20–40 s je 30-s-Clip. Auf kleinen Servern
   `RENDER_PRESET=veryfast` setzen.
 
-## 6. Benutzer
+## 6. TikTok-Veröffentlichung
+
+1. **Konto verbinden:** *TikTok-Konten* → *TikTok-Konto verbinden* (siehe `API_REGISTRATION.md` 2.4).
+2. **Vorbereiten:** Highlight öffnen → *Für TikTok vorbereiten*. Möglich nur bei fertig geschnittenem Video und
+   gültiger Veröffentlichungserlaubnis des Streamers (Modus B, `allows_publishing`).
+3. **Prüfen & freigeben:** *TikTok-Warteschlange* → *Prüfen & freigeben*. Die Seite fragt die Kontodaten live
+   bei TikTok ab. Weg wählen, Beschreibung prüfen, bei Direct Post Sichtbarkeit und Interaktionen wählen,
+   ggf. Werbung kennzeichnen, Erlaubnis und Einwilligung bestätigen → *Freigeben*.
+4. **Status:** Wird hochgeladen → TikTok verarbeitet → *Veröffentlicht* (Link zum Post) bzw. *In TikTok-Inbox*
+   (in der App fertigstellen). *Status jetzt abfragen* erzwingt eine sofortige Abfrage.
+5. **Export:** Weg *Manueller Export* → ZIP herunterladen → in der TikTok-App hochladen.
+6. **Fehler:** Die Ursache steht im Auftrag (z. B. „Tageslimit für Posts erreicht“, „Konto neu verbinden“).
+   *Erneut vorbereiten* stellt den Auftrag zurück zur Prüfung – es wird nie automatisch neu gepostet.
+
+| Meldung | Ursache / Lösung |
+|---|---|
+| „unaudited_client …“ / nur privat | App nicht zugelassen → „Nur ich“ wählen, Inbox-Upload oder Export nutzen |
+| „Konto neu verbinden“ | Token widerrufen/abgelaufen → *TikTok-Konten* → neu verbinden |
+| „Sichtbarkeit nicht mehr verfügbar“ | Kontoeinstellungen bei TikTok geändert → *Erneut vorbereiten* |
+| bleibt „TikTok verarbeitet“ | normal bis einige Minuten; nach 48 h wird der Auftrag als fehlgeschlagen markiert |
+
+## 7. Benutzer
 
 * Dashboard → *Benutzer* (nur Admins): anlegen, Rolle ändern, deaktivieren, Passwort setzen.
 * Rollen: **Administrator** (alles), **Redakteur** (Streamer, Rechte, Highlights, Freigaben), **Betrachter** (lesen).
@@ -145,7 +166,7 @@ Eigene Videos, an denen Sie alle Rechte haben, können ebenfalls nach `/data/sam
   docker compose exec web python -m app.cli reset-password --username admin
   ```
 
-## 7. Überwachung
+## 8. Überwachung
 
 | Was | Wie |
 |---|---|
@@ -179,7 +200,7 @@ for name in ALL_QUEUES:
 PY
 ```
 
-## 8. Speicher
+## 9. Speicher
 
 * Automatisch: stündliche Bereinigung (`STORAGE_RETENTION_DAYS`, `STORAGE_MAX_GB`), Videos in offener Freigabe
   bleiben geschützt. Docker-Logs sind auf 5 × 10 MB je Container begrenzt.
@@ -191,7 +212,7 @@ PY
   docker image prune -f                                                    # alte Images
   ```
 
-## 9. Sicherung und Wiederherstellung
+## 10. Sicherung und Wiederherstellung
 
 ```bash
 bash scripts/backup.sh                                     # sofortiges Backup nach ./backups
@@ -200,7 +221,7 @@ bash scripts/restore.sh backups/twitchclip-YYYYMMDD-HHMMSS.sql.gz
 
 Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTION_KEY`) – getrennt voneinander.
 
-## 10. Schlüssel rotieren
+## 11. Schlüssel rotieren
 
 * `SECRET_KEY` ändern → alle Benutzer werden abgemeldet. `docker compose up -d`.
 * `TOKEN_ENCRYPTION_KEY` rotieren:
@@ -213,7 +234,7 @@ Zu sichern sind: `backups/*.sql.gz` **und** die `.env` (enthält `TOKEN_ENCRYPTI
   # danach in .env nur noch TOKEN_ENCRYPTION_KEY=<NEU>, erneut docker compose up -d
   ```
 
-## 11. Fehlerbehebung
+## 12. Fehlerbehebung
 
 | Symptom | Ursache / Lösung |
 |---|---|

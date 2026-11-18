@@ -41,8 +41,15 @@ Für das App-Review verlangt TikTok öffentlich erreichbare Seiten:
 * Datenschutzerklärung (z. B. `https://ihre-domain.de/datenschutz`)
 * Nutzungsbedingungen (z. B. `https://ihre-domain.de/nutzungsbedingungen`)
 * Ein Logo/Icon der App
-* Ein kurzes **Demo-Video**, das den kompletten Ablauf zeigt (Login mit TikTok, Vorschau, Auswahl der
-  Sichtbarkeit, Einwilligungshinweis, Freigabe, Statusanzeige). Das zeichnen Sie nach Phase 6 auf.
+* Ein kurzes **Demo-Video**, das den kompletten Ablauf zeigt. Aufnahme mit TwitchClip AI:
+  1. *TikTok-Konten* → **TikTok-Konto verbinden** → Login bei TikTok → zurück im Dashboard (Konto „aktiv“).
+  2. *Highlights* → Highlight → **Für TikTok vorbereiten**.
+  3. Prüfseite zeigen: Konto-Name/Avatar (live von TikTok), Vorschau-Video, bearbeitbare Beschreibung,
+     Sichtbarkeit **ohne Voreinstellung** auswählen, Kommentare/Duett/Stitch (aus, bzw. ausgegraut, wenn im
+     Konto deaktiviert), Schalter „Inhalt kommerziell kennzeichnen“ mit „Your brand“/„Branded content“,
+     Einwilligungstext „By posting, you agree to TikTok's Music Usage Confirmation“.
+  4. **Freigeben** → Status „Wird hochgeladen“ → „TikTok verarbeitet“ → „Veröffentlicht“ bzw. „In TikTok-Inbox“.
+  5. Optional: *TikTok-Konten* → **Trennen** (Widerruf).
 
 ### 2.2 App anlegen
 
@@ -73,6 +80,17 @@ Für das Audit unter *Content Posting API → Apply for audit* den Antrag stelle
 belegen. TikTok prüft insbesondere die UX-Pflichten (siehe `API_CONSTRAINTS.md`, Abschnitt 2.5) – das
 Freigabeformular von TwitchClip AI ist darauf ausgelegt.
 
+### 2.4 Verbinden und Testen
+
+1. Dashboard → **TikTok-Konten** → **TikTok-Konto verbinden**. Angemeldet sein muss ein Admin oder Redakteur;
+   der Login bei TikTok erfolgt mit dem Konto, auf dem veröffentlicht werden soll (bei ungeprüften Apps
+   muss dieses Konto als *Sandbox-/Testnutzer* eingetragen und privat sein).
+2. Nach der Rückkehr zeigt die Seite Scopes, Ablauf des Tokens und die von TikTok erlaubten Sichtbarkeiten.
+   Tokens liegen verschlüsselt in der Datenbank und werden stündlich vor Ablauf erneuert (Refresh-Token ~1 Jahr).
+3. Sandbox-Test: `TIKTOK_DIRECT_POST_ENABLED=true` setzen und mit Sichtbarkeit **„Nur ich (privat)“** posten –
+   das ist das Einzige, was TikTok ungeprüften Apps erlaubt. Ohne Direct-Post-Zulassung den Weg
+   **Upload in TikTok-Inbox** verwenden (das Video erscheint als Benachrichtigung in der TikTok-App).
+
 ## 3. Checkliste
 
 - [ ] Twitch-App registriert, Redirect-URL exakt
@@ -81,4 +99,5 @@ Freigabeformular von TwitchClip AI ist darauf ausgelegt.
 - [ ] TikTok-App angelegt, Login Kit + Content Posting API, Redirect-URI exakt
 - [ ] Datenschutz- und Nutzungsbedingungen online
 - [ ] `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` in `.env`
+- [ ] TikTok-Konto im Dashboard verbunden, Testpost „Nur ich“ bzw. Inbox-Upload erfolgreich
 - [ ] App-Review beantragt, später Content-Posting-Audit

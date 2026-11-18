@@ -2,8 +2,8 @@
 
 ## Automatisierte Tests
 
-Die Suite (212 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
-(Twitch, ab Phase 6 TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
+Die Suite (265 Tests) läuft ohne externe Dienste: SQLite im Speicher und `fakeredis`. Externe APIs
+(Twitch, TikTok) werden mit `respx` gemockt – es gibt keine echten Netzwerkaufrufe.
 
 ```bash
 # lokal (Python 3.12)
@@ -41,6 +41,8 @@ docker compose --profile test run --rm --build test
 | `test_twitch_authorization.py` | Einladungslink (Signatur, Ablauf, einmalig), kompletter OAuth-Ablauf über HTTP, Editor-Rolle, fehlende Scopes, Token-Erneuerung/-Sperre, stündliche Validierung, EventSub-Widerruf, Trennen im Dashboard |
 | `test_clip_processing.py` | Zeitangaben, Kandidatenauswahl ohne Überlappung, Rechteprüfung vor jedem Schritt, Clip aus VOD (Parameter), Download ohne Token zum CDN, SHA-256-Duplikate, Größenlimit, Wiederholungen, 403 bei Editor, Testmodus mit echten FFmpeg-Beispielvideos, Neustart nach Re-Autorisierung |
 | `test_analysis.py` | Ton-Ausbrüche, Sprachsignale, Fensterwahl, Bewertung mit Umverteilung, Bild-Hashes, Facecam-Erkennung, Chat-Zähler ohne Texte, Chat-Spitzen als Kandidaten, Chat-Abo, Auswahl der besten N mit Schwelle und Tageslimit, Analyse echter FFmpeg-Testvideos, Duplikat gleicher VOD-Moment |
+| `test_tiktok.py` | Stückregeln der Content Posting API, PKCE (S256), kompletter OAuth-Ablauf über HTTP inkl. verschlüsselter Tokens, falscher/abgelaufener State, Rollen, Fehlerzuordnung (401/429/5xx/Fehlercodes), `Content-Range` je Stück, Token-Erneuerung und -Sperre, Trennen mit Widerruf, Creator-Info |
+| `test_publishing.py` | Warteschlange nur mit Rechten und fertigem Video, alle Freigabe-Pflichtangaben und UX-Regeln, Direct Post nur mit Schalter + Scope, Testmodus nur Export, Videolänge, ZIP-Export, Direct Post und Inbox Ende-zu-Ende, Fehlererklärung + erneute Prüfung, Rechteentzug vor Upload, nie doppelt initialisieren, Rate-Limit, Wiederaufnahme verlorener Jobs, Dashboard ohne Voreinstellungen |
 | `test_rendering.py` | Layout-Wahl und Ausschnitte innerhalb der Quelle, Untertitel-Zeilen/Karaoke/Überschrift, SRT, Titel/Beschreibung/max. 5 Hashtags, echtes Rendering beider Layouts (1080×1920, H.264/AAC, 30 fps), Aufräumen alter Fassungen, Schutz von Fassungen in der Warteschlange, Rechteprüfung, Dashboard-Bearbeitung, automatischer Schnitt nach der Auswahl |
 
 ## Phase 1 – Abnahme auf dem VPS
@@ -238,6 +240,44 @@ sed -i 's/^TEST_MODE=.*/TEST_MODE=false/; s/^MIN_HIGHLIGHT_SCORE=.*/MIN_HIGHLIGH
 
 Im Dashboard: Highlight öffnen → Vorschau abspielen (Untertitel, Überschrift), Texte bearbeiten →
 *Speichern & neu schneiden*, Layout wechseln, MP4 und SRT herunterladen.
+
+## Phase 6 – Abnahme auf dem VPS (TikTok & Freigabe)
+
+```bash
+cd /opt/twitchclip/twitchclip-ai
+git am /pfad/TwitchClip-Phase-6.patch && docker compose up -d --build
+docker compose exec web alembic current                                  # 20261118_0005 (head)
+docker compose --profile test run --rm --build test                       # alle Tests bestanden
+
+# 1) Ohne TikTok-Zugang: Freigabe + manueller Export (funktioniert sofort, auch im Testmodus)
+#    Dashboard: Highlight (Status „Geschnitten“) → „Für TikTok vorbereiten“ → „Prüfen & freigeben“
+#    → Weg „Manueller Export“ → beide Bestätigungen → Freigeben → ZIP herunterladen
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select id, method, status, export_path is not null as zip from publish_jobs order by id desc limit 5;"
+F=$(docker compose exec -T postgres psql -U twitchclip -d twitchclip -tAc "select export_path from publish_jobs where status='exported' order by id desc limit 1")
+docker compose exec worker python -c "import sys, zipfile; print(zipfile.ZipFile(sys.argv[1]).namelist())" "$F"
+#   erwartet: ['video.mp4', 'beschreibung.txt', 'untertitel.srt', 'HINWEISE.txt']
+
+# 2) Mit TikTok-App (Sandbox): .env ergänzen, dann
+grep -E '^TIKTOK_(CLIENT_KEY|DIRECT_POST_ENABLED|INBOX_UPLOAD_ENABLED)=' .env
+docker compose up -d
+#    Dashboard → TikTok-Konten → verbinden → Konto „aktiv“, Sichtbarkeiten sichtbar
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select a.display_name, t.scopes, t.expires_at, left(t.access_token, 12) as verschluesselt from tiktok_accounts a join oauth_tokens t on t.tiktok_account_id = a.id;"
+#    Highlight vorbereiten → Weg „Upload in TikTok-Inbox“ (oder Direct Post mit „Nur ich“) → Freigeben
+docker compose logs -f worker | grep -iE 'publish|tiktok'          # init → Upload → Status
+docker compose exec -T postgres psql -U twitchclip -d twitchclip -c \
+  "select id, method, status, tiktok_status, publish_id, uploaded_bytes, fail_reason from publish_jobs order by id desc limit 5;"
+#    erwartet: sent_to_inbox (Benachrichtigung in der TikTok-App) bzw. published
+
+# 3) Periodische Jobs
+docker compose exec worker python -c "from app.workers.scheduler import build_periodic_jobs; from app.config import get_settings; print([j.name for j in build_periodic_jobs(get_settings()) if 'tiktok' in j.name])"
+```
+
+Prüfen im Dashboard: Prüfseite zeigt Konto-Avatar/-Name, Sichtbarkeit ist **nicht** vorausgewählt,
+Kommentare/Duett/Stitch sind aus, „Inhalt kommerziell kennzeichnen“ blendet „Your brand“/„Branded content“
+ein, bei „Branded content“ ist „Nur ich“ gesperrt und der Einwilligungstext wechselt. Ohne beide
+Bestätigungen wird nicht freigegeben. Ein Betrachter-Konto sieht kein Freigabeformular.
 
 ## Lokale Entwicklung ohne Docker
 

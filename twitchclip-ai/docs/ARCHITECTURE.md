@@ -177,6 +177,34 @@ ausgewählte Highlights ─► Layout wählen ─► Überschrift/Beschreibung/H
   Texte werden nie automatisch überschrieben.
 * Ältere Fassungen werden beim Neuschnitt gelöscht – außer sie stecken bereits in der TikTok-Warteschlange.
 
+### TikTok-Veröffentlichung (Phase 6)
+
+```
+gerendert ─► „Für TikTok vorbereiten“ ─► pending_review ─► Prüfseite (Creator-Info live) ─► Freigabe ─► approved
+approved ─► Rechte + Creator-Info erneut prüfen ─► init (publish_id) ─► uploading ─► processing ─► published | sent_to_inbox | failed
+approved (Export) ─► ZIP ─► exported
+```
+
+| Weg | Voraussetzung | Ergebnis |
+|---|---|---|
+| Direct Post | `TIKTOK_DIRECT_POST_ENABLED=true`, Scope `video.publish`, App von TikTok zugelassen | Video wird mit den gewählten Einstellungen veröffentlicht |
+| Inbox-Upload | `TIKTOK_INBOX_UPLOAD_ENABLED=true`, Scope `video.upload` | Entwurf in der TikTok-Inbox, Veröffentlichung in der App |
+| Manueller Export | immer (im Testmodus der einzige Weg) | ZIP mit `video.mp4`, `beschreibung.txt`, `untertitel.srt`, `HINWEISE.txt` |
+
+* **OAuth:** Login Kit v2 mit PKCE (S256), `state` einmalig in Redis und an den angemeldeten Benutzer gebunden.
+  Tokens verschlüsselt (Fernet), stündliche Erneuerung, Widerruf beim Trennen.
+* **UX-Pflichten serverseitig erzwungen:** Sichtbarkeit ohne Voreinstellung und nur aus `privacy_level_options`;
+  Kommentare/Duett/Stitch standardmäßig aus und bei im Konto deaktivierten Funktionen immer aus;
+  kommerzielle Kennzeichnung (Your brand → `brand_organic_toggle`, Branded content → `brand_content_toggle`)
+  mit Pflicht zur Auswahl; Branded Content nie mit `SELF_ONLY`; Einwilligungstext je nach Kennzeichnung;
+  Videolänge ≤ `max_video_post_duration_sec`; zusätzlich Bestätigung der Streamer-Erlaubnis.
+* **Kein Doppel-Post:** Freigabe nur einmal (`pending_review` → `approved`); der Worker setzt `approved` →
+  `uploading` atomar (nur ein Worker gewinnt); nach Vergabe einer `publish_id` wird nie automatisch neu
+  initialisiert. Fehlgeschlagene Aufträge gehen über *Erneut vorbereiten* zurück zur Prüfung.
+* **Upload:** `FILE_UPLOAD` in Stücken (`TIKTOK_CHUNK_SIZE_MB`, Rest im letzten Stück, < 5 MB in einem Stück),
+  `Content-Range` je Stück, Fortschritt im Dashboard. Danach `status/fetch` mit Backoff (15 s … 1 h, Abbruch nach 48 h).
+* **Selbstheilung:** `tiktok_sync_publish` (10 min) nimmt verlorene Jobs nach Redis-/Worker-Neustart wieder auf.
+
 ## 4. Datenmodell (Migration `0001`)
 
 | Tabelle | Inhalt / wichtige Eindeutigkeiten |

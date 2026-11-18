@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}TikTok-Konten{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>TikTok-Konten</h1>
+  {% if current_user.can_edit and settings.tiktok_configured %}
+  <form method="post" action="/oauth/tiktok/start">{{ m.csrf() }}<button class="btn btn-primary" type="submit">TikTok-Konto verbinden</button></form>
+  {% endif %}
+</div>
+
+{% if not settings.tiktok_configured %}
+<p class="notice card-warn">TikTok ist nicht konfiguriert. TIKTOK_CLIENT_KEY und TIKTOK_CLIENT_SECRET in der .env setzen (siehe docs/API_REGISTRATION.md).
+  Bis dahin steht für freigegebene Videos der manuelle Export zur Verfügung.</p>
+{% else %}
+<p class="muted small">Redirect-URI für das TikTok-Entwicklerportal: <code>{{ redirect_uri }}</code> ·
+  Direct Post: {{ "aktiv (App von TikTok geprüft)" if settings.tiktok_direct_post_enabled else "aus – ungeprüfte Apps dürfen nur privat posten; Standard ist der Upload in die Inbox" }}</p>
+{% endif %}
+
+<section class="card">
+  {% if rows %}
+  <ul class="list">
+    {% for row in rows %}{% set a = row.account %}{% set t = row.token %}
+    <li class="list-row">
+      <div class="list-main">
+        <div class="head-ident">
+          {% if a.avatar_url %}<img class="avatar" src="{{ a.avatar_url }}" alt="" width="40" height="40" referrerpolicy="no-referrer">{% endif %}
+          <div><strong>{{ a.display_name or a.open_id }}</strong>{% if a.username %} <span class="muted">@{{ a.username }}</span>{% endif %}
+            <p class="muted small">
+              {% if a.is_active and t %}Verbunden · Scopes: {{ t.scopes | join(", ") }} · Token gültig bis {{ t.expires_at | localtime }}
+              {% elif t is none and a.is_active %}<span class="text-bad">Muss neu verbunden werden</span>
+              {% else %}Getrennt{% endif %}
+              {% if a.creator_info_fetched_at %} · Kontoinfo {{ a.creator_info_fetched_at | timeago }}{% endif %}</p>
+            {% if a.creator_info %}<p class="small">Sichtbarkeiten: {% for p in a.creator_info.privacy_level_options or [] %}<span class="tag">{{ privacy_labels.get(p, p) }}</span> {% endfor %}
+              · max. {{ a.creator_info.max_video_post_duration_sec or "?" }} s</p>{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="list-side">
+        {% if a.is_active and t %}{{ m.badge("aktiv", "good") }}{% elif a.is_active %}{{ m.badge("neu verbinden", "bad") }}{% else %}{{ m.badge("getrennt", "neutral") }}{% endif %}
+        {% if current_user.can_edit and a.is_active %}
+          {% if t %}<form method="post" action="/tiktok/{{ a.id }}/refresh">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Aktualisieren</button></form>{% endif %}
+          <form method="post" action="/tiktok/{{ a.id }}/disconnect" data-confirm="TikTok-Konto trennen? Der Zugriff wird bei TikTok widerrufen.">{{ m.csrf() }}<button class="btn btn-danger btn-sm" type="submit">Trennen</button></form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ m.empty("Noch kein TikTok-Konto verbunden.", "Mit „TikTok-Konto verbinden“ meldet sich der Kontoinhaber bei TikTok an und erlaubt Uploads. Tokens werden verschlüsselt gespeichert.") }}
+  {% endif %}
+</section>
+{% endblock %}

@@ -50,6 +50,13 @@
     {% endif %}
     {% if current_user.can_edit %}
     <div class="button-row">
+      {% if open_job %}
+      <a class="btn btn-primary" href="/queue/{{ open_job.id }}">Zur TikTok-Freigabe</a>
+      {% elif can_queue %}
+      <form method="post" action="/highlights/{{ highlight.id }}/queue">{{ m.csrf() }}<button class="btn btn-primary" type="submit">Für TikTok vorbereiten</button></form>
+      {% elif video and not can_publish %}
+      <span class="muted small">TikTok: keine Veröffentlichungserlaubnis für diesen Kanal</span>
+      {% endif %}
       {% if highlight.status == "rejected" %}
       <form method="post" action="/highlights/{{ highlight.id }}/restore">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Wiederherstellen</button></form>
       {% elif highlight.status not in ["queued", "published"] %}
@@ -118,7 +125,7 @@
   {% if jobs %}
   <ul class="list">
     {% for j in jobs %}
-    <li class="list-row"><span class="list-main">#{{ j.id }} · {{ PUBLISH_METHOD_LABELS.get(j.method, j.method) }} · {{ j.created_at | localtime }}</span>
+    <li class="list-row"><span class="list-main"><a href="/queue/{{ j.id }}">#{{ j.id }}</a> · {{ PUBLISH_METHOD_LABELS.get(j.method, j.method) }} · {{ j.created_at | localtime }}</span>
       <span class="list-side">{{ m.publish_status(j.status) }}</span></li>
     {% endfor %}
   </ul>

@@ -82,10 +82,13 @@ def highlight_detail(
         .order_by(PublishJob.created_at.desc())
     ).all()
     from app.media.metadata import caption_text
+    from app.services.publishing import open_job_for
     from app.services.rendering import LAYOUT_CHOICES, RENDERABLE
     from app.services.streamers import compute_rights
 
     video = highlight.current_video
+    rights = compute_rights(highlight.streamer)
+    open_job = open_job_for(db, highlight)
     has_srt = bool(video and Path(video.file_path).with_suffix(".srt").is_file())
     return render(
         request,
@@ -96,7 +99,15 @@ def highlight_detail(
             "jobs": jobs,
             "caption": caption_text(highlight.description or "", highlight.hashtags or []),
             "layout_choices": LAYOUT_CHOICES,
-            "can_render": highlight.status in RENDERABLE and compute_rights(highlight.streamer).can_process,
+            "can_render": highlight.status in RENDERABLE and rights.can_process,
+            "can_publish": rights.can_publish,
+            "open_job": open_job,
+            "can_queue": bool(
+                video
+                and rights.can_publish
+                and open_job is None
+                and highlight.status == HighlightStatus.RENDERED
+            ),
             "has_srt": has_srt,
             "nav": "highlights",
         },

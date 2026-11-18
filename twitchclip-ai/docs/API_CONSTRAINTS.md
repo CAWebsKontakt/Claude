@@ -221,6 +221,19 @@ Werden in Phase 6 im Freigabeformular umgesetzt:
 * Jede Chat-Nachricht ist ein eigener Webhook-Aufruf. Der Webhook zählt nur in Redis (keine Datenbank, keine
   Texte, keine Namen; Absender als gesalzener Hash nur für die Anzahl verschiedener Chatter).
 
+## Umsetzung Phase 6 (TikTok)
+
+* Endpunkte: `POST /v2/oauth/token/` (Code + PKCE-Verifier, Refresh), `POST /v2/oauth/revoke/`,
+  `GET /v2/user/info/`, `POST /v2/post/publish/creator_info/query/`, `POST /v2/post/publish/video/init/`
+  (Direct Post), `POST /v2/post/publish/inbox/video/init/` (Entwurf), `PUT <upload_url>` mit `Content-Range`,
+  `POST /v2/post/publish/status/fetch/`.
+* Die Creator-Info wird beim Öffnen der Prüfseite, bei der Freigabe (max. 15 min alt) und unmittelbar vor der
+  Initialisierung erneut abgefragt.
+* Fehlercodes werden in verständliche deutsche Meldungen übersetzt (`app/integrations/tiktok/errors.py`);
+  429/5xx vor der Initialisierung werden automatisch später wiederholt, danach nie.
+* Nicht verifiziert (Sandbox nicht erreichbar): die genaue Schreibweise einzelner Fehlercodes; unbekannte Codes
+  werden mit Code und TikTok-Text angezeigt.
+
 ## Teil 3 – Was daraus für das System folgt
 
 | Einschränkung | Umsetzung |

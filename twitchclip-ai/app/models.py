@@ -519,6 +519,11 @@ class PublishJob(TimestampMixin, Base):
     next_check_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # Phase 6: Rohstatus von TikTok, Upload-Fortschritt, Titelbild-Zeitpunkt, Export-Datei
+    tiktok_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    uploaded_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    video_cover_timestamp_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    export_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     highlight: Mapped[Highlight] = relationship()
     rendered_video: Mapped[RenderedVideo | None] = relationship()

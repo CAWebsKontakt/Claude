@@ -5,9 +5,9 @@
 <div class="page-head"><h1>TikTok-Warteschlange</h1></div>
 
 {% if not settings.tiktok_configured %}
-<p class="notice">TikTok ist noch nicht konfiguriert. Bis dahin können fertige Videos manuell exportiert werden (Phase 6).</p>
+<p class="notice">TikTok ist noch nicht konfiguriert – freigegebene Videos werden als ZIP zum manuellen Hochladen exportiert.</p>
 {% elif not accounts %}
-<p class="notice">Es ist noch kein TikTok-Konto verbunden.</p>
+<p class="notice">Es ist noch kein TikTok-Konto verbunden. <a href="/tiktok">Jetzt verbinden</a> oder freigegebene Videos manuell exportieren.</p>
 {% endif %}
 
 {% if jobs %}
@@ -19,14 +19,23 @@
       {% if j.rendered_video.thumbnail_path %}poster="/media/thumbnails/{{ j.rendered_video.id }}.jpg"{% endif %}></video>
     {% else %}<div class="tile-media"><span class="tile-placeholder">kein Video</span></div>{% endif %}
     <div class="tile-body">
-      <div class="tile-top">{{ m.publish_status(j.status) }} {{ m.badge(PUBLISH_METHOD_LABELS.get(j.method, j.method), "neutral") }}</div>
+      <div class="tile-top">{{ m.publish_status(j.status) }}{% if j.status != "pending_review" %} {{ m.badge(PUBLISH_METHOD_LABELS.get(j.method, j.method), "neutral") }}{% endif %}</div>
       <a href="/highlights/{{ j.highlight_id }}"><strong>{{ j.highlight.title or ("Highlight #" ~ j.highlight_id) }}</strong></a>
       <p class="muted small">{{ j.highlight.streamer.name }} · {{ j.created_at | timeago }}{% if j.tiktok_account %} · @{{ j.tiktok_account.username or j.tiktok_account.display_name }}{% endif %}</p>
       {% if j.caption %}<p class="small preline">{{ j.caption }}</p>{% endif %}
       {% if j.fail_reason %}<p class="small text-bad wrap">{{ j.fail_reason }}</p>{% endif %}
-      {% if current_user.can_edit and j.status in cancellable %}
-      <form method="post" action="/queue/{{ j.id }}/cancel" data-confirm="Eintrag abbrechen?">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Abbrechen</button></form>
+      {% if j.status in ["uploading", "processing"] and j.uploaded_bytes and j.rendered_video %}
+      <p class="small muted">{{ j.uploaded_bytes | filesize }} / {{ j.rendered_video.size_bytes | filesize }}{% if j.tiktok_status %} · {{ j.tiktok_status }}{% endif %}</p>
       {% endif %}
+      <div class="button-row">
+        <a class="btn btn-sm {{ 'btn-primary' if j.status == 'pending_review' and current_user.can_edit else 'btn-ghost' }}" href="/queue/{{ j.id }}">{{ "Prüfen & freigeben" if j.status == "pending_review" and current_user.can_edit else "Details" }}</a>
+        {% if current_user.can_edit and j.status == "failed" %}
+        <form method="post" action="/queue/{{ j.id }}/retry">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Erneut vorbereiten</button></form>
+        {% endif %}
+        {% if current_user.can_edit and j.status in cancellable %}
+        <form method="post" action="/queue/{{ j.id }}/cancel" data-confirm="Eintrag abbrechen?">{{ m.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Abbrechen</button></form>
+        {% endif %}
+      </div>
     </div>
   </article>
   {% endfor %}

@@ -78,4 +78,39 @@
   window.setTimeout(function () {
     document.querySelectorAll(".flash-success[data-flash]").forEach(function (el) { el.remove(); });
   }, 6000);
+
+  // TikTok-Freigabeformular: Optionen je nach Auswahl ein-/ausblenden (Server prüft alles erneut)
+  function updatePublishForm(form) {
+    var method = form.querySelector("[data-method]:checked");
+    var direct = method && method.value === "direct_post";
+    form.querySelectorAll("[data-direct-only]").forEach(function (el) {
+      el.hidden = !direct;
+      el.querySelectorAll("select, input").forEach(function (input) { input.disabled = !direct || input.hasAttribute("data-locked"); });
+    });
+    var privacy = form.querySelector("[data-privacy]");
+    if (privacy) privacy.required = !!direct;
+    var commercial = form.querySelector("[data-commercial]");
+    var options = form.querySelector("[data-commercial-options]");
+    if (options) options.hidden = !(commercial && commercial.checked);
+    var branded = form.querySelector("[data-branded]");
+    var isBranded = !!(direct && commercial && commercial.checked && branded && branded.checked);
+    if (privacy) {
+      var self = privacy.querySelector("option[value=SELF_ONLY]");
+      if (self) {
+        self.disabled = isBranded;
+        if (isBranded && privacy.value === "SELF_ONLY") privacy.value = "";
+      }
+    }
+    var music = form.querySelector("[data-consent-music]");
+    var brandedText = form.querySelector("[data-consent-branded]");
+    if (music && brandedText) {
+      music.hidden = isBranded;
+      brandedText.hidden = !isBranded;
+    }
+  }
+  document.querySelectorAll("[data-publish-form]").forEach(function (form) {
+    form.querySelectorAll("input[disabled], select[disabled]").forEach(function (el) { el.setAttribute("data-locked", ""); });
+    form.addEventListener("change", function () { updatePublishForm(form); });
+    updatePublishForm(form);
+  });
 })();

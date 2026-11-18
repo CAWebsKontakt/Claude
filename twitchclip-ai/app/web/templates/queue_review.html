@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as m with context %}
+{% block title %}Freigabe #{{ job.id }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>TikTok-Freigabe #{{ job.id }}</h1>
+    <p class="muted small"><a href="/highlights/{{ highlight.id }}">{{ highlight.title or ("Highlight #" ~ highlight.id) }}</a>
+      · {{ highlight.streamer.name }} · erstellt {{ job.created_at | localtime }}</p>
+  </div>
+  <div class="head-badges">{{ m.publish_status(job.status) }}{% if job.status != "pending_review" %} {{ m.badge(PUBLISH_METHOD_LABELS.get(job.method, job.method), "neutral") }}{% endif %}</div>
+</div>
+
+<div class="grid-2 grid-media">
+  <section class="card">
+    <h2>Vorschau</h2>
+    {% if video and not video.deleted_at %}
+      <video class="vertical-video" controls preload="metadata" playsinline src="/media/videos/{{ video.id }}.mp4"
+        {% if video.thumbnail_path %}poster="/media/thumbnails/{{ video.id }}.jpg"{% endif %}></video>
+      <p class="muted small">{{ video.width }}×{{ video.height }} · {{ video.duration | seconds }} · {{ video.size_bytes | filesize }}</p>
+    {% else %}{{ m.empty("Die Videodatei ist nicht mehr vorhanden.") }}{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Status</h2>
+    <dl class="kv">
+      <dt>Rechte</dt><dd>{{ m.badge(rights.label, "good" if rights.can_publish else "bad") }}</dd>
+      {% if job.tiktok_account %}<dt>Konto</dt><dd>{{ job.tiktok_account.display_name }}{% if job.tiktok_account.username %} (@{{ job.tiktok_account.username }}){% endif %}</dd>{% endif %}
+      {% if job.privacy_level %}<dt>Sichtbarkeit</dt><dd>{{ privacy_labels.get(job.privacy_level, job.privacy_level) }}</dd>{% endif %}
+      {% if job.approved_at %}<dt>Freigegeben</dt><dd>{{ job.approved_at | localtime }}{% if job.approved_by %} von {{ job.approved_by.username }}{% endif %}</dd>{% endif %}
+      {% if job.publish_id %}<dt>publish_id</dt><dd class="wrap small">{{ job.publish_id }}</dd>{% endif %}
+      {% if job.tiktok_status %}<dt>TikTok meldet</dt><dd>{{ job.tiktok_status }}</dd>{% endif %}
+      {% if job.uploaded_bytes and video %}<dt>Übertragen</dt><dd>{{ job.uploaded_bytes | filesize }} von {{ video.size_bytes | filesize }}</dd>{% endif %}
+      {% if job.last_checked_at %}<dt>Zuletzt geprüft</dt><dd>{{ job.last_checked_at | timeago }}</dd>{% endif %}
+      {% if job.fail_reason %}<dt>{{ "Hinweis" if job.status == "approved" else "Fehler" }}</dt><dd class="wrap {{ '' if job.status == 'approved' else 'text-bad' }}">{{ job.fail_reason }}</dd>{% endif %}
+    </dl>
+    {% if job.status == "exported" and job.export_path %}
+      <p><a class="btn btn-primary" href="/media/exports/{{ job.id }}.zip">Export (ZIP) herunterladen</a></p>
+      <p class="muted small">Enthält video.mp4, beschreibung.txt, untertitel.srt und eine Anleitung. In der TikTok-App hochladen und dort Sichtbarkeit und Einstellungen wählen.</p>
+    {% elif job.status == "sent_to_inbox" %}
+      <p class="notice">Das Video liegt als Entwurf in der TikTok-Inbox. In der TikTok-App die Benachrichtigung öffnen, bearbeiten und veröffentlichen.</p>
+    {% elif job.status == "published" and job.tiktok_post_id and job.tiktok_account and job.tiktok_account.username %}
+      <p><a class="btn btn-primary" href="https://www.tiktok.com/@{{ job.tiktok_account.username }}/video/{{ job.tiktok_post_id }}" target="_blank" rel="noopener noreferrer">Auf TikTok ansehen</a></p>
+    {% elif job.status == "published" %}
+      <p class="notice">TikTok hat die Veröffentlichung bestätigt. Privat veröffentlichte Videos haben keine öffentliche Adresse.</p>
+    {% endif %}
+    {% if current_user.can_edit %}
+    <div class="button-row">
+      {% if job.status in ["uploading", "processing"] and job.publish_id %}
+      <form method="post" action="/queue/{{ job.id }}/refresh-status">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Status jetzt abfragen</button></form>
+      {% endif %}
+      {% if job.status == "failed" %}
+      <form method="post" action="/queue/{{ job.id }}/retry">{{ m.csrf() }}<button class="btn btn-primary" type="submit">Erneut vorbereiten</button></form>
+      {% endif %}
+      {% if job.status in cancellable %}
+      <form method="post" action="/queue/{{ job.id }}/cancel" data-confirm="Eintrag abbrechen?">{{ m.csrf() }}<button class="btn btn-ghost" type="submit">Abbrechen</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+
+{% if job.status == "pending_review" and current_user.can_edit %}
+<section class="card" id="freigabe">
+  <h2>Prüfen &amp; freigeben</h2>
+  {% if not rights.can_publish %}
+    <p class="notice card-danger">Für diesen Kanal liegt keine Veröffentlichungserlaubnis vor ({{ rights.label }}). Eine Freigabe ist nicht möglich.</p>
+  {% else %}
+
+  {% if accounts|length > 1 %}
+  <form method="get" action="/queue/{{ job.id }}" class="form-inline">
+    <label class="field"><span>TikTok-Konto</span>
+      <select name="account">{% for a in accounts %}<option value="{{ a.id }}" {% if selected and a.id == selected.id %}selected{% endif %}>{{ a.display_name or a.open_id }}{% if a.username %} (@{{ a.username }}){% endif %}</option>{% endfor %}</select></label>
+    <button class="btn btn-ghost" type="submit">Konto wechseln</button>
+  </form>
+  {% endif %}
+
+  {% if creator_info %}
+  <div class="head-ident">
+    {% if creator_info.avatar_url %}<img class="avatar" src="{{ creator_info.avatar_url }}" alt="" width="48" height="48" referrerpolicy="no-referrer">{% endif %}
+    <div><strong>{{ creator_info.nickname or selected.display_name }}</strong>{% if creator_info.username %} <span class="muted">@{{ creator_info.username }}</span>{% endif %}
+      <p class="muted small">Das Video wird bei diesem TikTok-Konto veröffentlicht. Max. Videolänge: {{ creator_info.max_video_post_duration_sec or "?" }} s.</p></div>
+  </div>
+  {% elif creator_error %}
+    <p class="notice card-warn">TikTok-Kontoinformationen nicht abrufbar: {{ creator_error }} – nur der manuelle Export ist möglich. <a href="/tiktok">TikTok-Konten prüfen</a></p>
+  {% elif not accounts %}
+    <p class="notice">Kein TikTok-Konto verbunden{% if test_mode %} (im Testmodus wird nie zu TikTok hochgeladen){% endif %} – verfügbar ist der manuelle Export. <a href="/tiktok">TikTok-Konto verbinden</a></p>
+  {% endif %}
+  {% if too_long %}<p class="notice card-danger">Das Video ist länger als für dieses Konto erlaubt – nur Export möglich oder kürzer schneiden.</p>{% endif %}
+
+  <form method="post" action="/queue/{{ job.id }}/approve" class="form" data-publish-form>
+    {{ m.csrf() }}
+    <input type="hidden" name="account_id" value="{{ selected.id if selected else '' }}">
+
+    <fieldset class="checks">
+      <legend>Veröffentlichungsweg</legend>
+      {% for method in methods %}
+      <label><input type="radio" name="method" value="{{ method }}" required {% if methods|length == 1 %}checked{% endif %} data-method>
+        <span><strong>{{ PUBLISH_METHOD_LABELS.get(method, method) }}</strong><br><span class="muted small">{{ {
+          "direct_post": "Direkt auf dem gewählten TikTok-Konto veröffentlichen (nur mit von TikTok geprüfter App).",
+          "inbox_upload": "Als Entwurf in die TikTok-Inbox laden – dort in der App fertigstellen und selbst veröffentlichen.",
+          "manual_export": "ZIP mit Video, Beschreibung und Untertiteln herunterladen und manuell hochladen."}[method] }}</span></span></label>
+      {% endfor %}
+    </fieldset>
+
+    <label class="field"><span>Beschreibung (Titel bei TikTok, max. {{ caption_limit }} Zeichen)</span>
+      <textarea name="caption" rows="5" maxlength="{{ caption_limit }}" required>{{ job.caption }}</textarea></label>
+
+    {% if "direct_post" in methods and creator_info %}
+    <fieldset class="checks" data-direct-only>
+      <legend>Nur für Direct Post</legend>
+      <label class="field"><span>Wer darf das Video sehen? (Pflichtauswahl, keine Voreinstellung)</span>
+        <select name="privacy_level" data-privacy>
+          <option value="" selected>– bitte wählen –</option>
+          {% for level in creator_info.privacy_level_options %}<option value="{{ level }}">{{ privacy_labels.get(level, level) }}</option>{% endfor %}
+        </select></label>
+
+      <p class="small"><strong>Interaktionen erlauben</strong></p>
+      <label><input type="checkbox" name="allow_comment" value="1" {% if creator_info.comment_disabled %}disabled{% endif %}> Kommentare{% if creator_info.comment_disabled %} <span class="muted small">(in den TikTok-Einstellungen des Kontos deaktiviert)</span>{% endif %}</label>
+      <label><input type="checkbox" name="allow_duet" value="1" {% if creator_info.duet_disabled %}disabled{% endif %}> Duett{% if creator_info.duet_disabled %} <span class="muted small">(deaktiviert)</span>{% endif %}</label>
+      <label><input type="checkbox" name="allow_stitch" value="1" {% if creator_info.stitch_disabled %}disabled{% endif %}> Stitch{% if creator_info.stitch_disabled %} <span class="muted small">(deaktiviert)</span>{% endif %}</label>
+
+      <label><input type="checkbox" name="commercial" value="1" data-commercial> <span><strong>Inhalt kommerziell kennzeichnen</strong> (Disclose video content)<br>
+        <span class="muted small">Einschalten, wenn das Video eine Marke, ein Produkt oder eine Dienstleistung bewirbt.</span></span></label>
+      <div class="checks" data-commercial-options>
+        <label><input type="checkbox" name="your_brand" value="1"> <span>Eigene Marke (Your brand)<br><span class="muted small">{{ label_your_brand }}</span></span></label>
+        <label><input type="checkbox" name="branded_content" value="1" data-branded> <span>Markeninhalt (Branded content)<br><span class="muted small">{{ label_branded }} Nicht mit Sichtbarkeit „Nur ich“ möglich.</span></span></label>
+      </div>
+      <label><input type="checkbox" name="is_aigc" value="1"> Als KI-generierten Inhalt kennzeichnen</label>
+    </fieldset>
+    {% endif %}
+
+    <fieldset class="checks">
+      <legend>Bestätigungen</legend>
+      <label class="confirm"><input type="checkbox" name="rights_confirmed" value="1" required>
+        <span>Ich bestätige, dass die Veröffentlichung dieses Ausschnitts von der dokumentierten Erlaubnis von {{ highlight.streamer.name }} gedeckt ist und keine fremde, nicht lizenzierte Musik enthält.</span></label>
+      <label class="confirm"><input type="checkbox" name="consent" value="1" required>
+        <span data-consent-music>{{ music_consent }} <a href="{{ music_url }}" target="_blank" rel="noopener noreferrer">Music Usage Confirmation</a><br>
+          <span class="muted small">Mit der Veröffentlichung stimmen Sie der Musiknutzungsbestätigung von TikTok zu.</span></span>
+        <span data-consent-branded hidden>{{ branded_consent }} <a href="{{ branded_url }}" target="_blank" rel="noopener noreferrer">Branded Content Policy</a><br>
+          <span class="muted small">Mit der Veröffentlichung stimmen Sie der Markeninhalte-Richtlinie und der Musiknutzungsbestätigung von TikTok zu.</span></span></label>
+    </fieldset>
+    <p class="muted small">Nach der Freigabe kann es einige Minuten dauern, bis das Video bei TikTok verarbeitet und sichtbar ist.</p>
+    <div class="button-row"><button class="btn btn-primary" type="submit">Freigeben</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

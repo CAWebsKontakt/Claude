@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     tiktok_client_secret: SecretStr = Field(default=SecretStr(""))
     # Erst auf true setzen, wenn TikTok die App für Direct Post freigegeben (auditiert) hat.
     tiktok_direct_post_enabled: bool = False
+    # Upload als Entwurf in die TikTok-Inbox (Scope video.upload); der Nutzer veröffentlicht in der App
+    tiktok_inbox_upload_enabled: bool = True
+    tiktok_scopes: str = "user.info.basic,video.upload,video.publish"
+    tiktok_use_pkce: bool = True
+    tiktok_chunk_size_mb: int = Field(default=10, ge=5, le=64)
+    # Für Tests/Mocks überschreibbar
+    tiktok_api_base: str = "https://open.tiktokapis.com"
+    tiktok_auth_url: str = "https://www.tiktok.com/v2/auth/authorize/"
 
     # --- KI / Medien (ab Phase 4) ----------------------------------------
     whisper_model: str = "small"
@@ -307,6 +315,8 @@ class Settings(BaseSettings):
             "TWITCH_CLIP_DOWNLOAD_PATH": self.twitch_clip_download_path,
             "TIKTOK_CLIENT_KEY": "gesetzt" if self.tiktok_client_key else "nicht gesetzt",
             "TIKTOK_DIRECT_POST_ENABLED": self.tiktok_direct_post_enabled,
+            "TIKTOK_INBOX_UPLOAD_ENABLED": self.tiktok_inbox_upload_enabled,
+            "TIKTOK_SCOPES": self.tiktok_scopes,
             "WHISPER_MODEL": self.whisper_model,
             "ANALYSIS_TRANSCRIPTION": self.analysis_transcription,
             "CHAT_STATS_ENABLED": self.chat_stats_enabled,

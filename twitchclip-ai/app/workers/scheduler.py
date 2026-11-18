@@ -68,6 +68,15 @@ def build_periodic_jobs(settings: Settings) -> tuple[PeriodicJob, ...]:
             PeriodicJob("clips_resume_stuck", "app.workers.jobs.clips.resume_stuck_requests_job", 1800),
             PeriodicJob("chat_flush", "app.workers.jobs.analysis.flush_chat_job", 60),
         ]
+    if settings.tiktok_configured and not settings.test_mode:
+        from app.workers.jobs.publish import PERIODIC as TIKTOK_PERIODIC
+
+        jobs += [
+            PeriodicJob(name, func, interval, queue=queue) for name, func, interval, queue in TIKTOK_PERIODIC
+        ]
+    else:
+        # Freigegebene Exporte auch ohne TikTok-Zugang zuverlässig abarbeiten
+        jobs.append(PeriodicJob("tiktok_sync_publish", "app.workers.jobs.publish.sync_publish_jobs_job", 600))
     jobs.append(PeriodicJob("analysis_pending", "app.workers.jobs.analysis.analyze_pending_job", 600))
     if settings.test_mode:
         jobs.append(PeriodicJob("samples_ingest", "app.workers.jobs.clips.ingest_samples_job", 300))
